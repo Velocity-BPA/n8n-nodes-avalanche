@@ -1,39 +1,24 @@
-/*
- * Copyright (c) Velocity BPA, LLC
- * Licensed under the Business Source License 1.1
- * Commercial use requires a separate commercial license.
- * See LICENSE file for details.
+/**
+ * Copyright (c) 2026 Velocity BPA
+ * 
+ * Licensed under the Business Source License 1.1 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     https://github.com/VelocityBPA/n8n-nodes-avalanche/blob/main/LICENSE
+ * 
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-import type {
+import {
   IExecuteFunctions,
   INodeExecutionData,
   INodeType,
   INodeTypeDescription,
-  IDataObject,
-  ICredentialDataDecryptedObject,
+  NodeOperationError,
+  NodeApiError,
 } from 'n8n-workflow';
-import { ethers } from 'ethers';
-import axios from 'axios';
-
-// Licensing notice - logged once per node load
-const LICENSING_NOTICE = `[Velocity BPA Licensing Notice]
-
-This n8n node is licensed under the Business Source License 1.1 (BSL 1.1).
-
-Use of this node by for-profit organizations in production environments requires a commercial license from Velocity BPA.
-
-For licensing information, visit https://velobpa.com/licensing or contact licensing@velobpa.com.
-`;
-
-let licensingNoticeShown = false;
-
-function showLicensingNotice(): void {
-  if (!licensingNoticeShown) {
-    console.warn(LICENSING_NOTICE);
-    licensingNoticeShown = true;
-  }
-}
 
 export class Avalanche implements INodeType {
   description: INodeTypeDescription = {
@@ -43,8 +28,7 @@ export class Avalanche implements INodeType {
     group: ['transform'],
     version: 1,
     subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-    description:
-      'Interact with Avalanche blockchain - C-Chain, X-Chain, P-Chain, DeFi, and more',
+    description: 'Interact with the Avalanche API',
     defaults: {
       name: 'Avalanche',
     },
@@ -52,1252 +36,2569 @@ export class Avalanche implements INodeType {
     outputs: ['main'],
     credentials: [
       {
-        name: 'avalancheRpc',
+        name: 'avalancheApi',
         required: true,
-      },
-      {
-        name: 'snowtrace',
-        required: false,
       },
     ],
     properties: [
+      // Resource selector
       {
         displayName: 'Resource',
         name: 'resource',
         type: 'options',
         noDataExpression: true,
         options: [
-          { name: 'Account', value: 'account' },
-          { name: 'Block', value: 'block' },
-          { name: 'Contract', value: 'contract' },
-          { name: 'Cross-Chain', value: 'crosschain' },
-          { name: 'DeFi', value: 'defi' },
-          { name: 'Network', value: 'network' },
-          { name: 'NFT', value: 'nft' },
-          { name: 'P-Chain', value: 'pchain' },
-          { name: 'Token', value: 'token' },
-          { name: 'Transaction', value: 'transaction' },
-          { name: 'Utility', value: 'utility' },
-          { name: 'X-Chain', value: 'xchain' },
+          {
+            name: 'CChainOperations',
+            value: 'cChainOperations',
+          },
+          {
+            name: 'XChainAssets',
+            value: 'xChainAssets',
+          },
+          {
+            name: 'PChainStaking',
+            value: 'pChainStaking',
+          },
+          {
+            name: 'CrossChainTransfers',
+            value: 'crossChainTransfers',
+          },
+          {
+            name: 'NodeInfo',
+            value: 'nodeInfo',
+          },
+          {
+            name: 'HealthMonitoring',
+            value: 'healthMonitoring',
+          }
         ],
-        default: 'account',
+        default: 'cChainOperations',
       },
-      // Account Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['account'] } },
-        options: [
-          {
-            name: 'Get Balance',
-            value: 'getBalance',
-            description: 'Get AVAX balance of an address',
-            action: 'Get balance of an address',
-          },
-          {
-            name: 'Get Transaction Count',
-            value: 'getTransactionCount',
-            description: 'Get nonce/transaction count',
-            action: 'Get transaction count',
-          },
-          {
-            name: 'Get Transaction History',
-            value: 'getTransactionHistory',
-            description: 'Get transaction history from Snowtrace',
-            action: 'Get transaction history',
-          },
-        ],
-        default: 'getBalance',
-      },
-      // Block Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['block'] } },
-        options: [
-          {
-            name: 'Get Block',
-            value: 'getBlock',
-            description: 'Get block by number or hash',
-            action: 'Get block',
-          },
-          {
-            name: 'Get Latest Block',
-            value: 'getLatestBlock',
-            description: 'Get the latest block',
-            action: 'Get latest block',
-          },
-          {
-            name: 'Get Block Number',
-            value: 'getBlockNumber',
-            description: 'Get current block number',
-            action: 'Get block number',
-          },
-        ],
-        default: 'getLatestBlock',
-      },
-      // Contract Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['contract'] } },
-        options: [
-          {
-            name: 'Read Contract',
-            value: 'readContract',
-            description: 'Call a read-only contract function',
-            action: 'Read contract',
-          },
-          {
-            name: 'Write Contract',
-            value: 'writeContract',
-            description: 'Execute a contract function',
-            action: 'Write contract',
-          },
-          {
-            name: 'Get ABI',
-            value: 'getAbi',
-            description: 'Get contract ABI from Snowtrace',
-            action: 'Get contract ABI',
-          },
-        ],
-        default: 'readContract',
-      },
-      // Cross-Chain Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['crosschain'] } },
-        options: [
-          {
-            name: 'Get Atomic UTXOs',
-            value: 'getAtomicUTXOs',
-            description: 'Get atomic UTXOs for cross-chain transfers',
-            action: 'Get atomic UTXOs',
-          },
-          {
-            name: 'Get X-Chain Balance',
-            value: 'getXChainBalance',
-            description: 'Get X-Chain AVAX balance',
-            action: 'Get X-Chain balance',
-          },
-          {
-            name: 'Get P-Chain Balance',
-            value: 'getPChainBalance',
-            description: 'Get P-Chain AVAX balance',
-            action: 'Get P-Chain balance',
-          },
-        ],
-        default: 'getAtomicUTXOs',
-      },
-      // DeFi Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['defi'] } },
-        options: [
-          {
-            name: 'Get Token Price',
-            value: 'getTokenPrice',
-            description: 'Get token price from DEX',
-            action: 'Get token price',
-          },
-          {
-            name: 'Get Swap Quote',
-            value: 'getSwapQuote',
-            description: 'Get quote for token swap',
-            action: 'Get swap quote',
-          },
-          {
-            name: 'Wrap AVAX',
-            value: 'wrapAvax',
-            description: 'Wrap AVAX to WAVAX',
-            action: 'Wrap AVAX',
-          },
-          {
-            name: 'Unwrap WAVAX',
-            value: 'unwrapWavax',
-            description: 'Unwrap WAVAX to AVAX',
-            action: 'Unwrap WAVAX',
-          },
-        ],
-        default: 'getTokenPrice',
-      },
-      // Network Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['network'] } },
-        options: [
-          {
-            name: 'Get Network Info',
-            value: 'getNetworkInfo',
-            description: 'Get network information',
-            action: 'Get network info',
-          },
-          {
-            name: 'Get Gas Price',
-            value: 'getGasPrice',
-            description: 'Get current gas price',
-            action: 'Get gas price',
-          },
-          {
-            name: 'Get Chain ID',
-            value: 'getChainId',
-            description: 'Get chain ID',
-            action: 'Get chain ID',
-          },
-          {
-            name: 'Get AVAX Price',
-            value: 'getAvaxPrice',
-            description: 'Get current AVAX price in USD',
-            action: 'Get AVAX price',
-          },
-        ],
-        default: 'getNetworkInfo',
-      },
-      // NFT Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['nft'] } },
-        options: [
-          {
-            name: 'Get NFT Balance',
-            value: 'getNftBalance',
-            description: 'Get NFT balance for an address',
-            action: 'Get NFT balance',
-          },
-          {
-            name: 'Get NFT Owner',
-            value: 'getNftOwner',
-            description: 'Get owner of an NFT',
-            action: 'Get NFT owner',
-          },
-          {
-            name: 'Get NFT Metadata',
-            value: 'getNftMetadata',
-            description: 'Get NFT metadata',
-            action: 'Get NFT metadata',
-          },
-          {
-            name: 'Get NFT Token URI',
-            value: 'getNftTokenUri',
-            description: 'Get NFT token URI',
-            action: 'Get NFT token URI',
-          },
-        ],
-        default: 'getNftBalance',
-      },
-      // P-Chain Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['pchain'] } },
-        options: [
-          {
-            name: 'Get Validators',
-            value: 'getValidators',
-            description: 'Get current validators',
-            action: 'Get validators',
-          },
-          {
-            name: 'Get Pending Validators',
-            value: 'getPendingValidators',
-            description: 'Get pending validators',
-            action: 'Get pending validators',
-          },
-          {
-            name: 'Get Staking Info',
-            value: 'getStakingInfo',
-            description: 'Get staking parameters',
-            action: 'Get staking info',
-          },
-          {
-            name: 'Get Subnets',
-            value: 'getSubnets',
-            description: 'Get all subnets',
-            action: 'Get subnets',
-          },
-        ],
-        default: 'getValidators',
-      },
-      // Token Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['token'] } },
-        options: [
-          {
-            name: 'Get Token Balance',
-            value: 'getTokenBalance',
-            description: 'Get ERC-20 token balance',
-            action: 'Get token balance',
-          },
-          {
-            name: 'Get Token Info',
-            value: 'getTokenInfo',
-            description: 'Get token name, symbol, decimals',
-            action: 'Get token info',
-          },
-          {
-            name: 'Transfer Token',
-            value: 'transferToken',
-            description: 'Transfer ERC-20 tokens',
-            action: 'Transfer token',
-          },
-          {
-            name: 'Get Allowance',
-            value: 'getAllowance',
-            description: 'Get token spending allowance',
-            action: 'Get allowance',
-          },
-          {
-            name: 'Approve Token',
-            value: 'approveToken',
-            description: 'Approve token spending',
-            action: 'Approve token',
-          },
-        ],
-        default: 'getTokenBalance',
-      },
-      // Transaction Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['transaction'] } },
-        options: [
-          {
-            name: 'Send AVAX',
-            value: 'sendAvax',
-            description: 'Send AVAX to an address',
-            action: 'Send AVAX',
-          },
-          {
-            name: 'Get Transaction',
-            value: 'getTransaction',
-            description: 'Get transaction details',
-            action: 'Get transaction',
-          },
-          {
-            name: 'Get Transaction Receipt',
-            value: 'getTransactionReceipt',
-            description: 'Get transaction receipt',
-            action: 'Get transaction receipt',
-          },
-          {
-            name: 'Wait for Transaction',
-            value: 'waitForTransaction',
-            description: 'Wait for transaction confirmation',
-            action: 'Wait for transaction',
-          },
-        ],
-        default: 'getTransaction',
-      },
-      // Utility Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['utility'] } },
-        options: [
-          {
-            name: 'Convert Units',
-            value: 'convertUnits',
-            description: 'Convert between AVAX units',
-            action: 'Convert units',
-          },
-          {
-            name: 'Validate Address',
-            value: 'validateAddress',
-            description: 'Validate Avalanche address',
-            action: 'Validate address',
-          },
-          {
-            name: 'Encode Function',
-            value: 'encodeFunction',
-            description: 'Encode function call data',
-            action: 'Encode function',
-          },
-          {
-            name: 'Decode Function',
-            value: 'decodeFunction',
-            description: 'Decode function return data',
-            action: 'Decode function',
-          },
-        ],
-        default: 'convertUnits',
-      },
-      // X-Chain Operations
-      {
-        displayName: 'Operation',
-        name: 'operation',
-        type: 'options',
-        noDataExpression: true,
-        displayOptions: { show: { resource: ['xchain'] } },
-        options: [
-          {
-            name: 'Get Balance',
-            value: 'getXBalance',
-            description: 'Get X-Chain balance',
-            action: 'Get X-Chain balance',
-          },
-          {
-            name: 'Get Asset Info',
-            value: 'getAssetInfo',
-            description: 'Get asset information',
-            action: 'Get asset info',
-          },
-          {
-            name: 'Get UTXOs',
-            value: 'getUtxos',
-            description: 'Get UTXOs for an address',
-            action: 'Get UTXOs',
-          },
-        ],
-        default: 'getXBalance',
-      },
-      // Common Parameters
-      {
-        displayName: 'Address',
-        name: 'address',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: '0x...',
-        displayOptions: {
-          show: {
-            resource: ['account', 'token', 'nft', 'crosschain'],
-            operation: [
-              'getBalance',
-              'getTransactionCount',
-              'getTransactionHistory',
-              'getTokenBalance',
-              'getAllowance',
-              'getNftBalance',
-              'getAtomicUTXOs',
-              'getXChainBalance',
-              'getPChainBalance',
-            ],
-          },
-        },
-      },
-      {
-        displayName: 'Contract Address',
-        name: 'contractAddress',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: '0x...',
-        displayOptions: {
-          show: {
-            resource: ['contract', 'token', 'nft', 'defi'],
-            operation: [
-              'readContract',
-              'writeContract',
-              'getAbi',
-              'getTokenBalance',
-              'getTokenInfo',
-              'transferToken',
-              'getAllowance',
-              'approveToken',
-              'getNftBalance',
-              'getNftOwner',
-              'getNftMetadata',
-              'getNftTokenUri',
-              'getTokenPrice',
-            ],
-          },
-        },
-      },
-      {
-        displayName: 'Transaction Hash',
-        name: 'transactionHash',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: '0x...',
-        displayOptions: {
-          show: {
-            resource: ['transaction'],
-            operation: ['getTransaction', 'getTransactionReceipt', 'waitForTransaction'],
-          },
-        },
-      },
-      {
-        displayName: 'To Address',
-        name: 'toAddress',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: '0x...',
-        displayOptions: {
-          show: {
-            resource: ['transaction', 'token'],
-            operation: ['sendAvax', 'transferToken'],
-          },
-        },
-      },
-      {
-        displayName: 'Amount',
-        name: 'amount',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: '1.0',
-        description: 'Amount in AVAX or tokens',
-        displayOptions: {
-          show: {
-            resource: ['transaction', 'token', 'defi'],
-            operation: [
-              'sendAvax',
-              'transferToken',
-              'approveToken',
-              'wrapAvax',
-              'unwrapWavax',
-              'getSwapQuote',
-            ],
-          },
-        },
-      },
-      {
-        displayName: 'Block Number or Hash',
-        name: 'blockIdentifier',
-        type: 'string',
-        default: '',
-        placeholder: '12345 or 0x...',
-        displayOptions: {
-          show: {
-            resource: ['block'],
-            operation: ['getBlock'],
-          },
-        },
-      },
-      {
-        displayName: 'Token ID',
-        name: 'tokenId',
-        type: 'string',
-        default: '',
-        required: true,
-        displayOptions: {
-          show: {
-            resource: ['nft'],
-            operation: ['getNftOwner', 'getNftMetadata', 'getNftTokenUri'],
-          },
-        },
-      },
-      {
-        displayName: 'Function Name',
-        name: 'functionName',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: 'balanceOf',
-        displayOptions: {
-          show: {
-            resource: ['contract'],
-            operation: ['readContract', 'writeContract'],
-          },
-        },
-      },
-      {
-        displayName: 'Function Arguments',
-        name: 'functionArgs',
-        type: 'string',
-        default: '',
-        placeholder: '["0x123...", 100]',
-        description: 'JSON array of function arguments',
-        displayOptions: {
-          show: {
-            resource: ['contract'],
-            operation: ['readContract', 'writeContract'],
-          },
-        },
-      },
-      {
-        displayName: 'ABI',
-        name: 'abi',
-        type: 'json',
-        default: '[]',
-        displayOptions: {
-          show: {
-            resource: ['contract'],
-            operation: ['readContract', 'writeContract'],
-          },
-        },
-      },
-      {
-        displayName: 'Spender Address',
-        name: 'spenderAddress',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: '0x...',
-        displayOptions: {
-          show: {
-            resource: ['token'],
-            operation: ['getAllowance', 'approveToken'],
-          },
-        },
-      },
-      {
-        displayName: 'From Unit',
-        name: 'fromUnit',
-        type: 'options',
-        options: [
-          { name: 'AVAX', value: 'ether' },
-          { name: 'nAVAX (Gwei)', value: 'gwei' },
-          { name: 'Wei', value: 'wei' },
-        ],
-        default: 'ether',
-        displayOptions: {
-          show: {
-            resource: ['utility'],
-            operation: ['convertUnits'],
-          },
-        },
-      },
-      {
-        displayName: 'To Unit',
-        name: 'toUnit',
-        type: 'options',
-        options: [
-          { name: 'AVAX', value: 'ether' },
-          { name: 'nAVAX (Gwei)', value: 'gwei' },
-          { name: 'Wei', value: 'wei' },
-        ],
-        default: 'wei',
-        displayOptions: {
-          show: {
-            resource: ['utility'],
-            operation: ['convertUnits'],
-          },
-        },
-      },
-      {
-        displayName: 'Value',
-        name: 'value',
-        type: 'string',
-        default: '',
-        required: true,
-        displayOptions: {
-          show: {
-            resource: ['utility'],
-            operation: ['convertUnits', 'validateAddress'],
-          },
-        },
-      },
-      {
-        displayName: 'Source Chain',
-        name: 'sourceChain',
-        type: 'options',
-        options: [
-          { name: 'X-Chain', value: 'X' },
-          { name: 'P-Chain', value: 'P' },
-        ],
-        default: 'X',
-        displayOptions: {
-          show: {
-            resource: ['crosschain'],
-            operation: ['getAtomicUTXOs'],
-          },
-        },
-      },
-      {
-        displayName: 'Token In',
-        name: 'tokenIn',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: '0x...',
-        displayOptions: {
-          show: {
-            resource: ['defi'],
-            operation: ['getSwapQuote'],
-          },
-        },
-      },
-      {
-        displayName: 'Token Out',
-        name: 'tokenOut',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: '0x...',
-        displayOptions: {
-          show: {
-            resource: ['defi'],
-            operation: ['getSwapQuote'],
-          },
-        },
-      },
-      {
-        displayName: 'X-Chain Address',
-        name: 'xChainAddress',
-        type: 'string',
-        default: '',
-        required: true,
-        placeholder: 'X-avax1...',
-        displayOptions: {
-          show: {
-            resource: ['xchain'],
-            operation: ['getXBalance', 'getUtxos'],
-          },
-        },
-      },
-      {
-        displayName: 'Asset ID',
-        name: 'assetId',
-        type: 'string',
-        default: 'AVAX',
-        displayOptions: {
-          show: {
-            resource: ['xchain'],
-            operation: ['getXBalance', 'getAssetInfo'],
-          },
-        },
-      },
+      // Operation dropdowns per resource
+{
+  displayName: 'Operation',
+  name: 'operation',
+  type: 'options',
+  noDataExpression: true,
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+    },
+  },
+  options: [
+    {
+      name: 'Get Account Balance',
+      value: 'getBalance',
+      description: 'Get the balance of an Avalanche C-Chain account',
+      action: 'Get account balance',
+    },
+    {
+      name: 'Send Raw Transaction',
+      value: 'sendRawTransaction',
+      description: 'Send a signed raw transaction to the C-Chain',
+      action: 'Send raw transaction',
+    },
+    {
+      name: 'Get Transaction by Hash',
+      value: 'getTransactionByHash',
+      description: 'Get transaction details by transaction hash',
+      action: 'Get transaction by hash',
+    },
+    {
+      name: 'Get Transaction Receipt',
+      value: 'getTransactionReceipt',
+      description: 'Get transaction receipt by transaction hash',
+      action: 'Get transaction receipt',
+    },
+    {
+      name: 'Call Contract',
+      value: 'callContract',
+      description: 'Execute a read-only contract call',
+      action: 'Call contract',
+    },
+    {
+      name: 'Estimate Gas',
+      value: 'estimateGas',
+      description: 'Estimate gas required for a transaction',
+      action: 'Estimate gas',
+    },
+    {
+      name: 'Get Block by Number',
+      value: 'getBlockByNumber',
+      description: 'Get block information by block number',
+      action: 'Get block by number',
+    },
+  ],
+  default: 'getBalance',
+},
+{
+  displayName: 'Operation',
+  name: 'operation',
+  type: 'options',
+  noDataExpression: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+    },
+  },
+  options: [
+    {
+      name: 'Get Balance',
+      value: 'getBalance',
+      description: 'Get asset balance for an address',
+      action: 'Get asset balance',
+    },
+    {
+      name: 'Send Assets',
+      value: 'send',
+      description: 'Send assets to another address',
+      action: 'Send assets',
+    },
+    {
+      name: 'Create Asset',
+      value: 'createAsset',
+      description: 'Create a new asset on X-Chain',
+      action: 'Create new asset',
+    },
+    {
+      name: 'Get Transaction',
+      value: 'getTx',
+      description: 'Get transaction details by ID',
+      action: 'Get transaction details',
+    },
+    {
+      name: 'Get Transaction Status',
+      value: 'getTxStatus',
+      description: 'Get transaction status by ID',
+      action: 'Get transaction status',
+    },
+    {
+      name: 'Get UTXOs',
+      value: 'getUTXOs',
+      description: 'Get unspent transaction outputs',
+      action: 'Get unspent transaction outputs',
+    },
+    {
+      name: 'List Addresses',
+      value: 'listAddresses',
+      description: 'List wallet addresses',
+      action: 'List wallet addresses',
+    },
+  ],
+  default: 'getBalance',
+},
+{
+  displayName: 'Operation',
+  name: 'operation',
+  type: 'options',
+  noDataExpression: true,
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+    },
+  },
+  options: [
+    {
+      name: 'Get Validators',
+      value: 'getValidators',
+      description: 'Get current validators',
+      action: 'Get current validators',
+    },
+    {
+      name: 'Get Pending Validators',
+      value: 'getPendingValidators',
+      description: 'Get pending validators',
+      action: 'Get pending validators',
+    },
+    {
+      name: 'Add Validator',
+      value: 'addValidator',
+      description: 'Add validator',
+      action: 'Add validator',
+    },
+    {
+      name: 'Add Delegator',
+      value: 'addDelegator',
+      description: 'Add delegator',
+      action: 'Add delegator',
+    },
+    {
+      name: 'Get Stake',
+      value: 'getStake',
+      description: 'Get stake amount',
+      action: 'Get stake amount',
+    },
+    {
+      name: 'Get Current Validators',
+      value: 'getCurrentValidators',
+      description: 'Get current validator set',
+      action: 'Get current validator set',
+    },
+    {
+      name: 'Get Reward UTXOs',
+      value: 'getRewardUTXOs',
+      description: 'Get reward UTXOs',
+      action: 'Get reward UTXOs',
+    },
+  ],
+  default: 'getValidators',
+},
+{
+  displayName: 'Operation',
+  name: 'operation',
+  type: 'options',
+  noDataExpression: true,
+  displayOptions: {
+    show: {
+      resource: ['crossChainTransfers'],
+    },
+  },
+  options: [
+    {
+      name: 'Export AVAX from X-Chain',
+      value: 'exportFromXChain',
+      description: 'Export AVAX from X-Chain to another chain',
+      action: 'Export AVAX from X-Chain',
+    },
+    {
+      name: 'Export AVAX from C-Chain',
+      value: 'exportFromCChain',
+      description: 'Export AVAX from C-Chain to another chain',
+      action: 'Export AVAX from C-Chain',
+    },
+    {
+      name: 'Export AVAX from P-Chain',
+      value: 'exportFromPChain',
+      description: 'Export AVAX from P-Chain to another chain',
+      action: 'Export AVAX from P-Chain',
+    },
+    {
+      name: 'Import AVAX to X-Chain',
+      value: 'importToXChain',
+      description: 'Import AVAX to X-Chain from another chain',
+      action: 'Import AVAX to X-Chain',
+    },
+    {
+      name: 'Import AVAX to C-Chain',
+      value: 'importToCChain',
+      description: 'Import AVAX to C-Chain from another chain',
+      action: 'Import AVAX to C-Chain',
+    },
+    {
+      name: 'Import AVAX to P-Chain',
+      value: 'importToPChain',
+      description: 'Import AVAX to P-Chain from another chain',
+      action: 'Import AVAX to P-Chain',
+    },
+  ],
+  default: 'exportFromXChain',
+},
+{
+  displayName: 'Operation',
+  name: 'operation',
+  type: 'options',
+  noDataExpression: true,
+  displayOptions: {
+    show: {
+      resource: ['nodeInfo'],
+    },
+  },
+  options: [
+    {
+      name: 'Get Node Version',
+      value: 'getNodeVersion',
+      description: 'Get node version information',
+      action: 'Get node version information',
+    },
+    {
+      name: 'Get Node ID',
+      value: 'getNodeID',
+      description: 'Get node ID',
+      action: 'Get node ID',
+    },
+    {
+      name: 'Get Network ID',
+      value: 'getNetworkID',
+      description: 'Get network ID',
+      action: 'Get network ID',
+    },
+    {
+      name: 'Get Network Name',
+      value: 'getNetworkName',
+      description: 'Get network name',
+      action: 'Get network name',
+    },
+    {
+      name: 'Get Blockchain ID',
+      value: 'getBlockchainID',
+      description: 'Get blockchain ID',
+      action: 'Get blockchain ID',
+    },
+    {
+      name: 'Get Connected Peers',
+      value: 'getPeers',
+      description: 'Get connected peers',
+      action: 'Get connected peers',
+    },
+    {
+      name: 'Check Bootstrap Status',
+      value: 'isBootstrapped',
+      description: 'Check if node is bootstrapped',
+      action: 'Check if node is bootstrapped',
+    },
+  ],
+  default: 'getNodeVersion',
+},
+{
+  displayName: 'Operation',
+  name: 'operation',
+  type: 'options',
+  noDataExpression: true,
+  displayOptions: {
+    show: {
+      resource: ['healthMonitoring'],
+    },
+  },
+  options: [
+    {
+      name: 'Get Liveness',
+      value: 'getLiveness',
+      description: 'Get node liveness status',
+      action: 'Get node liveness status',
+    },
+    {
+      name: 'Get Readiness',
+      value: 'getReadiness',
+      description: 'Get node readiness status',
+      action: 'Get node readiness status',
+    },
+    {
+      name: 'Get Health',
+      value: 'getHealth',
+      description: 'Get overall health status',
+      action: 'Get overall health status',
+    },
+    {
+      name: 'Issue AVM Transaction',
+      value: 'issueAvmTx',
+      description: 'Issue transaction on X-Chain for testing',
+      action: 'Issue AVM transaction',
+    },
+    {
+      name: 'Issue Platform Transaction',
+      value: 'issuePlatformTx',
+      description: 'Issue platform transaction on P-Chain',
+      action: 'Issue platform transaction',
+    },
+    {
+      name: 'Get Latest Block Number',
+      value: 'getLatestBlockNumber',
+      description: 'Get latest block number from C-Chain',
+      action: 'Get latest block number',
+    },
+  ],
+  default: 'getLiveness',
+},
+      // Parameter definitions
+{
+  displayName: 'Address',
+  name: 'address',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['getBalance'],
+    },
+  },
+  default: '',
+  description: 'The account address to get balance for (0x format)',
+},
+{
+  displayName: 'Block Tag',
+  name: 'blockTag',
+  type: 'options',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['getBalance'],
+    },
+  },
+  options: [
+    {
+      name: 'Latest',
+      value: 'latest',
+    },
+    {
+      name: 'Earliest',
+      value: 'earliest',
+    },
+    {
+      name: 'Pending',
+      value: 'pending',
+    },
+    {
+      name: 'Custom Block Number',
+      value: 'custom',
+    },
+  ],
+  default: 'latest',
+  description: 'The block tag to use for balance query',
+},
+{
+  displayName: 'Custom Block Number',
+  name: 'customBlockNumber',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['getBalance'],
+      blockTag: ['custom'],
+    },
+  },
+  default: '',
+  description: 'Custom block number in hex format (e.g., 0x1b4)',
+},
+{
+  displayName: 'Signed Transaction Data',
+  name: 'signedTransactionData',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['sendRawTransaction'],
+    },
+  },
+  default: '',
+  description: 'The signed transaction data in hex format',
+},
+{
+  displayName: 'Transaction Hash',
+  name: 'transactionHash',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['getTransactionByHash', 'getTransactionReceipt'],
+    },
+  },
+  default: '',
+  description: 'The transaction hash to query',
+},
+{
+  displayName: 'To Address',
+  name: 'toAddress',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['callContract', 'estimateGas'],
+    },
+  },
+  default: '',
+  description: 'The contract address to call',
+},
+{
+  displayName: 'Data',
+  name: 'data',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['callContract', 'estimateGas'],
+    },
+  },
+  default: '',
+  description: 'The encoded function call data',
+},
+{
+  displayName: 'From Address',
+  name: 'fromAddress',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['callContract', 'estimateGas'],
+    },
+  },
+  default: '',
+  description: 'The address to call from (optional)',
+},
+{
+  displayName: 'Value',
+  name: 'value',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['callContract', 'estimateGas'],
+    },
+  },
+  default: '0x0',
+  description: 'The value to send with the call in hex format',
+},
+{
+  displayName: 'Gas',
+  name: 'gas',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['estimateGas'],
+    },
+  },
+  default: '',
+  description: 'Gas limit for the transaction (optional)',
+},
+{
+  displayName: 'Gas Price',
+  name: 'gasPrice',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['estimateGas'],
+    },
+  },
+  default: '',
+  description: 'Gas price for the transaction (optional)',
+},
+{
+  displayName: 'Call Block Tag',
+  name: 'callBlockTag',
+  type: 'options',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['callContract'],
+    },
+  },
+  options: [
+    {
+      name: 'Latest',
+      value: 'latest',
+    },
+    {
+      name: 'Earliest',
+      value: 'earliest',
+    },
+    {
+      name: 'Pending',
+      value: 'pending',
+    },
+    {
+      name: 'Custom Block Number',
+      value: 'custom',
+    },
+  ],
+  default: 'latest',
+  description: 'The block tag to use for the contract call',
+},
+{
+  displayName: 'Custom Call Block Number',
+  name: 'customCallBlockNumber',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['callContract'],
+      callBlockTag: ['custom'],
+    },
+  },
+  default: '',
+  description: 'Custom block number in hex format (e.g., 0x1b4)',
+},
+{
+  displayName: 'Block Number',
+  name: 'blockNumber',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['getBlockByNumber'],
+    },
+  },
+  default: 'latest',
+  description: 'Block number in hex format or "latest", "earliest", "pending"',
+},
+{
+  displayName: 'Include Transactions',
+  name: 'includeTransactions',
+  type: 'boolean',
+  displayOptions: {
+    show: {
+      resource: ['cChainOperations'],
+      operation: ['getBlockByNumber'],
+    },
+  },
+  default: false,
+  description: 'Whether to include full transaction objects',
+},
+{
+  displayName: 'Address',
+  name: 'address',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['getBalance'],
+    },
+  },
+  default: '',
+  description: 'The address to get balance for',
+},
+{
+  displayName: 'Asset ID',
+  name: 'assetID',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['getBalance', 'send'],
+    },
+  },
+  default: 'AVAX',
+  description: 'The asset ID to check balance for (default: AVAX)',
+},
+{
+  displayName: 'To Address',
+  name: 'to',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['send'],
+    },
+  },
+  default: '',
+  description: 'The destination address',
+},
+{
+  displayName: 'Amount',
+  name: 'amount',
+  type: 'number',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['send'],
+    },
+  },
+  default: 0,
+  description: 'The amount to send',
+},
+{
+  displayName: 'From Address',
+  name: 'from',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['send'],
+    },
+  },
+  default: '',
+  description: 'The source address (optional)',
+},
+{
+  displayName: 'Change Address',
+  name: 'changeAddr',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['send'],
+    },
+  },
+  default: '',
+  description: 'The address to send change to (optional)',
+},
+{
+  displayName: 'Asset Name',
+  name: 'name',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['createAsset'],
+    },
+  },
+  default: '',
+  description: 'The name of the asset to create',
+},
+{
+  displayName: 'Asset Symbol',
+  name: 'symbol',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['createAsset'],
+    },
+  },
+  default: '',
+  description: 'The symbol of the asset to create',
+},
+{
+  displayName: 'Denomination',
+  name: 'denomination',
+  type: 'number',
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['createAsset'],
+    },
+  },
+  default: 0,
+  description: 'The denomination of the asset (number of decimal places)',
+},
+{
+  displayName: 'Initial Holders',
+  name: 'initialHolders',
+  type: 'json',
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['createAsset'],
+    },
+  },
+  default: '[]',
+  description: 'Array of initial holder objects with address and amount properties',
+},
+{
+  displayName: 'Transaction ID',
+  name: 'txID',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['getTx', 'getTxStatus'],
+    },
+  },
+  default: '',
+  description: 'The transaction ID to query',
+},
+{
+  displayName: 'Addresses',
+  name: 'addresses',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['getUTXOs'],
+    },
+  },
+  default: '',
+  description: 'Comma-separated list of addresses to get UTXOs for',
+},
+{
+  displayName: 'Limit',
+  name: 'limit',
+  type: 'number',
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['getUTXOs'],
+    },
+  },
+  default: 1024,
+  description: 'Maximum number of UTXOs to return',
+},
+{
+  displayName: 'Start Index',
+  name: 'startIndex',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['getUTXOs'],
+    },
+  },
+  default: '',
+  description: 'Start index for pagination',
+},
+{
+  displayName: 'Username',
+  name: 'username',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['listAddresses'],
+    },
+  },
+  default: '',
+  description: 'The username for wallet access',
+},
+{
+  displayName: 'Password',
+  name: 'password',
+  type: 'string',
+  typeOptions: {
+    password: true,
+  },
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['xChainAssets'],
+      operation: ['listAddresses'],
+    },
+  },
+  default: '',
+  description: 'The password for wallet access',
+},
+{
+  displayName: 'Subnet ID',
+  name: 'subnetID',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['getValidators', 'getPendingValidators', 'getCurrentValidators'],
+    },
+  },
+  default: '',
+  description: 'The ID of the subnet to query validators for',
+},
+{
+  displayName: 'Node IDs',
+  name: 'nodeIDs',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['getValidators', 'getPendingValidators'],
+    },
+  },
+  default: '',
+  description: 'Comma-separated list of node IDs to filter by',
+},
+{
+  displayName: 'Node ID',
+  name: 'nodeID',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['addValidator', 'addDelegator'],
+    },
+  },
+  default: '',
+  description: 'The ID of the node to validate or delegate to',
+},
+{
+  displayName: 'Start Time',
+  name: 'startTime',
+  type: 'number',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['addValidator', 'addDelegator'],
+    },
+  },
+  default: 0,
+  description: 'Unix timestamp when the validation/delegation starts',
+},
+{
+  displayName: 'End Time',
+  name: 'endTime',
+  type: 'number',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['addValidator', 'addDelegator'],
+    },
+  },
+  default: 0,
+  description: 'Unix timestamp when the validation/delegation ends',
+},
+{
+  displayName: 'Stake Amount',
+  name: 'stakeAmount',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['addValidator', 'addDelegator'],
+    },
+  },
+  default: '',
+  description: 'The amount of AVAX to stake in nAVAX (10^9 nAVAX = 1 AVAX)',
+},
+{
+  displayName: 'Reward Address',
+  name: 'rewardAddress',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['addValidator', 'addDelegator'],
+    },
+  },
+  default: '',
+  description: 'The address where rewards should be sent',
+},
+{
+  displayName: 'Addresses',
+  name: 'addresses',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['getStake'],
+    },
+  },
+  default: '',
+  description: 'Comma-separated list of addresses to check stake for',
+},
+{
+  displayName: 'Validators Only',
+  name: 'validatorsOnly',
+  type: 'boolean',
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['getStake'],
+    },
+  },
+  default: false,
+  description: 'Whether to only include validator stake',
+},
+{
+  displayName: 'Transaction ID',
+  name: 'txID',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['getRewardUTXOs'],
+    },
+  },
+  default: '',
+  description: 'The ID of the transaction to get reward UTXOs for',
+},
+{
+  displayName: 'Encoding',
+  name: 'encoding',
+  type: 'options',
+  displayOptions: {
+    show: {
+      resource: ['pChainStaking'],
+      operation: ['getRewardUTXOs'],
+    },
+  },
+  options: [
+    {
+      name: 'CB58',
+      value: 'cb58',
+    },
+    {
+      name: 'Hex',
+      value: 'hex',
+    },
+  ],
+  default: 'cb58',
+  description: 'The encoding format for the response',
+},
+{
+  displayName: 'To Address',
+  name: 'to',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['crossChainTransfers'],
+      operation: ['exportFromXChain', 'exportFromCChain', 'exportFromPChain', 'importToXChain', 'importToCChain', 'importToPChain'],
+    },
+  },
+  default: '',
+  description: 'The destination address for the transfer',
+},
+{
+  displayName: 'Amount',
+  name: 'amount',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['crossChainTransfers'],
+      operation: ['exportFromXChain', 'exportFromCChain', 'exportFromPChain'],
+    },
+  },
+  default: '',
+  description: 'The amount of AVAX to export (in nAVAX)',
+},
+{
+  displayName: 'Destination Chain',
+  name: 'destinationChain',
+  type: 'options',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['crossChainTransfers'],
+      operation: ['exportFromXChain', 'exportFromCChain', 'exportFromPChain'],
+    },
+  },
+  options: [
+    {
+      name: 'X-Chain',
+      value: 'X',
+    },
+    {
+      name: 'P-Chain',
+      value: 'P',
+    },
+    {
+      name: 'C-Chain',
+      value: 'C',
+    },
+  ],
+  default: 'P',
+  description: 'The chain to export AVAX to',
+},
+{
+  displayName: 'Source Chain',
+  name: 'sourceChain',
+  type: 'options',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['crossChainTransfers'],
+      operation: ['importToXChain', 'importToCChain', 'importToPChain'],
+    },
+  },
+  options: [
+    {
+      name: 'X-Chain',
+      value: 'X',
+    },
+    {
+      name: 'P-Chain',
+      value: 'P',
+    },
+    {
+      name: 'C-Chain',
+      value: 'C',
+    },
+  ],
+  default: 'P',
+  description: 'The chain to import AVAX from',
+},
+{
+  displayName: 'Alias',
+  name: 'alias',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['nodeInfo'],
+      operation: ['getBlockchainID'],
+    },
+  },
+  default: '',
+  description: 'The blockchain alias (e.g., X, P, C)',
+},
+{
+  displayName: 'Chain',
+  name: 'chain',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['nodeInfo'],
+      operation: ['isBootstrapped'],
+    },
+  },
+  default: '',
+  description: 'The chain identifier to check bootstrap status for',
+},
+{
+  displayName: 'Tags',
+  name: 'tags',
+  type: 'string',
+  displayOptions: {
+    show: {
+      resource: ['healthMonitoring'],
+      operation: ['getHealth'],
+    },
+  },
+  default: '',
+  description: 'Comma-separated list of tags to filter health checks',
+},
+{
+  displayName: 'Transaction',
+  name: 'tx',
+  type: 'string',
+  required: true,
+  displayOptions: {
+    show: {
+      resource: ['healthMonitoring'],
+      operation: ['issueAvmTx', 'issuePlatformTx'],
+    },
+  },
+  default: '',
+  description: 'The transaction data to issue',
+},
+{
+  displayName: 'Encoding',
+  name: 'encoding',
+  type: 'options',
+  displayOptions: {
+    show: {
+      resource: ['healthMonitoring'],
+      operation: ['issueAvmTx', 'issuePlatformTx'],
+    },
+  },
+  options: [
+    {
+      name: 'Hex',
+      value: 'hex',
+    },
+    {
+      name: 'CB58',
+      value: 'cb58',
+    },
+    {
+      name: 'JSON',
+      value: 'json',
+    },
+  ],
+  default: 'hex',
+  description: 'The encoding format for the transaction',
+},
     ],
   };
 
   async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-    // Show licensing notice once per node load
-    showLicensingNotice();
-
     const items = this.getInputData();
-    const returnData: INodeExecutionData[] = [];
-    const credentials = (await this.getCredentials(
-      'avalancheRpc',
-    )) as ICredentialDataDecryptedObject;
+    const resource = this.getNodeParameter('resource', 0) as string;
 
-    const rpcUrl = getRpcUrl(credentials);
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-
-    for (let i = 0; i < items.length; i++) {
-      try {
-        const resource = this.getNodeParameter('resource', i) as string;
-        const operation = this.getNodeParameter('operation', i) as string;
-        let result: IDataObject = {};
-
-        // Account Operations
-        if (resource === 'account') {
-          if (operation === 'getBalance') {
-            const address = this.getNodeParameter('address', i) as string;
-            const balance = await provider.getBalance(address);
-            result = {
-              address,
-              balanceWei: balance.toString(),
-              balanceAvax: ethers.formatEther(balance),
-            };
-          } else if (operation === 'getTransactionCount') {
-            const address = this.getNodeParameter('address', i) as string;
-            const count = await provider.getTransactionCount(address);
-            result = { address, transactionCount: count };
-          } else if (operation === 'getTransactionHistory') {
-            const address = this.getNodeParameter('address', i) as string;
-            const snowtraceCredentials = await this.getCredentials('snowtrace').catch(() => null);
-            if (snowtraceCredentials) {
-              const apiKey = snowtraceCredentials.apiKey as string;
-              const network = snowtraceCredentials.network as string;
-              const baseUrl =
-                network === 'mainnet'
-                  ? 'https://api.snowtrace.io'
-                  : 'https://api-testnet.snowtrace.io';
-              const response = await axios.get(`${baseUrl}/api`, {
-                params: {
-                  module: 'account',
-                  action: 'txlist',
-                  address,
-                  sort: 'desc',
-                  apikey: apiKey,
-                },
-              });
-              result = { address, transactions: response.data.result };
-            } else {
-              throw new Error('Snowtrace credentials required for transaction history');
-            }
-          }
-        }
-        // Block Operations
-        else if (resource === 'block') {
-          if (operation === 'getLatestBlock') {
-            const block = await provider.getBlock('latest');
-            result = block as unknown as IDataObject;
-          } else if (operation === 'getBlockNumber') {
-            const blockNumber = await provider.getBlockNumber();
-            result = { blockNumber };
-          } else if (operation === 'getBlock') {
-            const blockIdentifier = this.getNodeParameter('blockIdentifier', i) as string;
-            const blockId = blockIdentifier.startsWith('0x')
-              ? blockIdentifier
-              : parseInt(blockIdentifier, 10);
-            const block = await provider.getBlock(blockId);
-            result = block as unknown as IDataObject;
-          }
-        }
-        // Network Operations
-        else if (resource === 'network') {
-          if (operation === 'getNetworkInfo') {
-            const network = await provider.getNetwork();
-            const blockNumber = await provider.getBlockNumber();
-            result = {
-              chainId: network.chainId.toString(),
-              name: network.name,
-              blockNumber,
-            };
-          } else if (operation === 'getGasPrice') {
-            const feeData = await provider.getFeeData();
-            result = {
-              gasPrice: feeData.gasPrice?.toString(),
-              gasPriceGwei: feeData.gasPrice
-                ? ethers.formatUnits(feeData.gasPrice, 'gwei')
-                : null,
-              maxFeePerGas: feeData.maxFeePerGas?.toString(),
-              maxPriorityFeePerGas: feeData.maxPriorityFeePerGas?.toString(),
-            };
-          } else if (operation === 'getChainId') {
-            const network = await provider.getNetwork();
-            result = { chainId: network.chainId.toString() };
-          } else if (operation === 'getAvaxPrice') {
-            const snowtraceCredentials = await this.getCredentials('snowtrace').catch(() => null);
-            if (snowtraceCredentials) {
-              const apiKey = snowtraceCredentials.apiKey as string;
-              const response = await axios.get('https://api.snowtrace.io/api', {
-                params: {
-                  module: 'stats',
-                  action: 'avaxprice',
-                  apikey: apiKey,
-                },
-              });
-              result = response.data.result;
-            } else {
-              throw new Error('Snowtrace credentials required for AVAX price');
-            }
-          }
-        }
-        // Transaction Operations
-        else if (resource === 'transaction') {
-          if (operation === 'getTransaction') {
-            const txHash = this.getNodeParameter('transactionHash', i) as string;
-            const tx = await provider.getTransaction(txHash);
-            result = tx as unknown as IDataObject;
-          } else if (operation === 'getTransactionReceipt') {
-            const txHash = this.getNodeParameter('transactionHash', i) as string;
-            const receipt = await provider.getTransactionReceipt(txHash);
-            result = receipt as unknown as IDataObject;
-          } else if (operation === 'waitForTransaction') {
-            const txHash = this.getNodeParameter('transactionHash', i) as string;
-            const receipt = await provider.waitForTransaction(txHash);
-            result = receipt as unknown as IDataObject;
-          } else if (operation === 'sendAvax') {
-            const privateKey = credentials.privateKey as string;
-            if (!privateKey) throw new Error('Private key required for sending transactions');
-            const wallet = new ethers.Wallet(privateKey, provider);
-            const toAddress = this.getNodeParameter('toAddress', i) as string;
-            const amount = this.getNodeParameter('amount', i) as string;
-            const tx = await wallet.sendTransaction({
-              to: toAddress,
-              value: ethers.parseEther(amount),
-            });
-            const receipt = await tx.wait();
-            result = {
-              hash: tx.hash,
-              from: tx.from,
-              to: tx.to,
-              value: ethers.formatEther(tx.value),
-              receipt: receipt as unknown as IDataObject,
-            };
-          }
-        }
-        // Token Operations
-        else if (resource === 'token') {
-          const ERC20_ABI = [
-            'function balanceOf(address) view returns (uint256)',
-            'function decimals() view returns (uint8)',
-            'function symbol() view returns (string)',
-            'function name() view returns (string)',
-            'function totalSupply() view returns (uint256)',
-            'function allowance(address owner, address spender) view returns (uint256)',
-            'function approve(address spender, uint256 amount) returns (bool)',
-            'function transfer(address to, uint256 amount) returns (bool)',
-          ];
-
-          if (operation === 'getTokenBalance') {
-            const address = this.getNodeParameter('address', i) as string;
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC20_ABI, provider);
-            const [balance, decimals, symbol] = await Promise.all([
-              contract.balanceOf(address),
-              contract.decimals(),
-              contract.symbol(),
-            ]);
-            result = {
-              address,
-              contractAddress,
-              balance: balance.toString(),
-              balanceFormatted: ethers.formatUnits(balance, decimals),
-              decimals: Number(decimals),
-              symbol,
-            };
-          } else if (operation === 'getTokenInfo') {
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC20_ABI, provider);
-            const [name, symbol, decimals, totalSupply] = await Promise.all([
-              contract.name(),
-              contract.symbol(),
-              contract.decimals(),
-              contract.totalSupply(),
-            ]);
-            result = {
-              contractAddress,
-              name,
-              symbol,
-              decimals: Number(decimals),
-              totalSupply: totalSupply.toString(),
-              totalSupplyFormatted: ethers.formatUnits(totalSupply, decimals),
-            };
-          } else if (operation === 'getAllowance') {
-            const address = this.getNodeParameter('address', i) as string;
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const spenderAddress = this.getNodeParameter('spenderAddress', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC20_ABI, provider);
-            const [allowance, decimals] = await Promise.all([
-              contract.allowance(address, spenderAddress),
-              contract.decimals(),
-            ]);
-            result = {
-              owner: address,
-              spender: spenderAddress,
-              allowance: allowance.toString(),
-              allowanceFormatted: ethers.formatUnits(allowance, decimals),
-            };
-          } else if (operation === 'approveToken') {
-            const privateKey = credentials.privateKey as string;
-            if (!privateKey) throw new Error('Private key required');
-            const wallet = new ethers.Wallet(privateKey, provider);
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const spenderAddress = this.getNodeParameter('spenderAddress', i) as string;
-            const amount = this.getNodeParameter('amount', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC20_ABI, wallet);
-            const decimals = await contract.decimals();
-            const tx = await contract.approve(spenderAddress, ethers.parseUnits(amount, decimals));
-            const receipt = await tx.wait();
-            result = { hash: tx.hash, receipt: receipt as unknown as IDataObject };
-          } else if (operation === 'transferToken') {
-            const privateKey = credentials.privateKey as string;
-            if (!privateKey) throw new Error('Private key required');
-            const wallet = new ethers.Wallet(privateKey, provider);
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const toAddress = this.getNodeParameter('toAddress', i) as string;
-            const amount = this.getNodeParameter('amount', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC20_ABI, wallet);
-            const decimals = await contract.decimals();
-            const tx = await contract.transfer(toAddress, ethers.parseUnits(amount, decimals));
-            const receipt = await tx.wait();
-            result = { hash: tx.hash, receipt: receipt as unknown as IDataObject };
-          }
-        }
-        // NFT Operations
-        else if (resource === 'nft') {
-          const ERC721_ABI = [
-            'function balanceOf(address) view returns (uint256)',
-            'function ownerOf(uint256) view returns (address)',
-            'function tokenURI(uint256) view returns (string)',
-            'function name() view returns (string)',
-            'function symbol() view returns (string)',
-          ];
-
-          if (operation === 'getNftBalance') {
-            const address = this.getNodeParameter('address', i) as string;
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC721_ABI, provider);
-            const balance = await contract.balanceOf(address);
-            result = { address, contractAddress, balance: balance.toString() };
-          } else if (operation === 'getNftOwner') {
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const tokenId = this.getNodeParameter('tokenId', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC721_ABI, provider);
-            const owner = await contract.ownerOf(tokenId);
-            result = { contractAddress, tokenId, owner };
-          } else if (operation === 'getNftTokenUri') {
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const tokenId = this.getNodeParameter('tokenId', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC721_ABI, provider);
-            const tokenUri = await contract.tokenURI(tokenId);
-            result = { contractAddress, tokenId, tokenUri };
-          } else if (operation === 'getNftMetadata') {
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const tokenId = this.getNodeParameter('tokenId', i) as string;
-            const contract = new ethers.Contract(contractAddress, ERC721_ABI, provider);
-            const [tokenUri, name, symbol] = await Promise.all([
-              contract.tokenURI(tokenId),
-              contract.name(),
-              contract.symbol(),
-            ]);
-            let metadata = {};
-            if (tokenUri.startsWith('http')) {
-              try {
-                const response = await axios.get(tokenUri);
-                metadata = response.data;
-              } catch {
-                metadata = { error: 'Failed to fetch metadata' };
-              }
-            }
-            result = { contractAddress, tokenId, name, symbol, tokenUri, metadata };
-          }
-        }
-        // Contract Operations
-        else if (resource === 'contract') {
-          if (operation === 'readContract') {
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const functionName = this.getNodeParameter('functionName', i) as string;
-            const functionArgs = this.getNodeParameter('functionArgs', i) as string;
-            const abi = this.getNodeParameter('abi', i) as string;
-            const contract = new ethers.Contract(contractAddress, JSON.parse(abi), provider);
-            const args = functionArgs ? JSON.parse(functionArgs) : [];
-            const response = await contract[functionName](...args);
-            result = { result: response?.toString?.() ?? response };
-          } else if (operation === 'writeContract') {
-            const privateKey = credentials.privateKey as string;
-            if (!privateKey) throw new Error('Private key required');
-            const wallet = new ethers.Wallet(privateKey, provider);
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const functionName = this.getNodeParameter('functionName', i) as string;
-            const functionArgs = this.getNodeParameter('functionArgs', i) as string;
-            const abi = this.getNodeParameter('abi', i) as string;
-            const contract = new ethers.Contract(contractAddress, JSON.parse(abi), wallet);
-            const args = functionArgs ? JSON.parse(functionArgs) : [];
-            const tx = await contract[functionName](...args);
-            const receipt = await tx.wait();
-            result = { hash: tx.hash, receipt: receipt as unknown as IDataObject };
-          } else if (operation === 'getAbi') {
-            const contractAddress = this.getNodeParameter('contractAddress', i) as string;
-            const snowtraceCredentials = await this.getCredentials('snowtrace').catch(() => null);
-            if (snowtraceCredentials) {
-              const apiKey = snowtraceCredentials.apiKey as string;
-              const response = await axios.get('https://api.snowtrace.io/api', {
-                params: {
-                  module: 'contract',
-                  action: 'getabi',
-                  address: contractAddress,
-                  apikey: apiKey,
-                },
-              });
-              result = { contractAddress, abi: JSON.parse(response.data.result) };
-            } else {
-              throw new Error('Snowtrace credentials required');
-            }
-          }
-        }
-        // DeFi Operations
-        else if (resource === 'defi') {
-          const WAVAX_ADDRESS = '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7';
-          const WAVAX_ABI = [
-            'function deposit() payable',
-            'function withdraw(uint256)',
-            'function balanceOf(address) view returns (uint256)',
-          ];
-
-          if (operation === 'wrapAvax') {
-            const privateKey = credentials.privateKey as string;
-            if (!privateKey) throw new Error('Private key required');
-            const wallet = new ethers.Wallet(privateKey, provider);
-            const amount = this.getNodeParameter('amount', i) as string;
-            const wavax = new ethers.Contract(WAVAX_ADDRESS, WAVAX_ABI, wallet);
-            const tx = await wavax.deposit({ value: ethers.parseEther(amount) });
-            const receipt = await tx.wait();
-            result = { hash: tx.hash, amount, receipt: receipt as unknown as IDataObject };
-          } else if (operation === 'unwrapWavax') {
-            const privateKey = credentials.privateKey as string;
-            if (!privateKey) throw new Error('Private key required');
-            const wallet = new ethers.Wallet(privateKey, provider);
-            const amount = this.getNodeParameter('amount', i) as string;
-            const wavax = new ethers.Contract(WAVAX_ADDRESS, WAVAX_ABI, wallet);
-            const tx = await wavax.withdraw(ethers.parseEther(amount));
-            const receipt = await tx.wait();
-            result = { hash: tx.hash, amount, receipt: receipt as unknown as IDataObject };
-          } else if (operation === 'getTokenPrice' || operation === 'getSwapQuote') {
-            result = { message: 'Use external DEX aggregator APIs for price quotes' };
-          }
-        }
-        // P-Chain Operations
-        else if (resource === 'pchain') {
-          const pchainUrl = rpcUrl.replace('/ext/bc/C/rpc', '/ext/bc/P');
-
-          if (operation === 'getValidators') {
-            const response = await axios.post(pchainUrl, {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'platform.getCurrentValidators',
-              params: { subnetID: '' },
-            });
-            result = response.data.result;
-          } else if (operation === 'getPendingValidators') {
-            const response = await axios.post(pchainUrl, {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'platform.getPendingValidators',
-              params: { subnetID: '' },
-            });
-            result = response.data.result;
-          } else if (operation === 'getStakingInfo') {
-            const response = await axios.post(pchainUrl, {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'platform.getMinStake',
-              params: {},
-            });
-            result = response.data.result;
-          } else if (operation === 'getSubnets') {
-            const response = await axios.post(pchainUrl, {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'platform.getSubnets',
-              params: {},
-            });
-            result = response.data.result;
-          }
-        }
-        // X-Chain Operations
-        else if (resource === 'xchain') {
-          const xchainUrl = rpcUrl.replace('/ext/bc/C/rpc', '/ext/bc/X');
-
-          if (operation === 'getXBalance') {
-            const xChainAddress = this.getNodeParameter('xChainAddress', i) as string;
-            const assetId = this.getNodeParameter('assetId', i) as string;
-            const response = await axios.post(xchainUrl, {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'avm.getBalance',
-              params: { address: xChainAddress, assetID: assetId },
-            });
-            result = response.data.result;
-          } else if (operation === 'getAssetInfo') {
-            const assetId = this.getNodeParameter('assetId', i) as string;
-            const response = await axios.post(xchainUrl, {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'avm.getAssetDescription',
-              params: { assetID: assetId },
-            });
-            result = response.data.result;
-          } else if (operation === 'getUtxos') {
-            const xChainAddress = this.getNodeParameter('xChainAddress', i) as string;
-            const response = await axios.post(xchainUrl, {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'avm.getUTXOs',
-              params: { addresses: [xChainAddress] },
-            });
-            result = response.data.result;
-          }
-        }
-        // Cross-Chain Operations
-        else if (resource === 'crosschain') {
-          if (operation === 'getAtomicUTXOs') {
-            const address = this.getNodeParameter('address', i) as string;
-            const sourceChain = this.getNodeParameter('sourceChain', i) as string;
-            const response = await axios.post(rpcUrl.replace('/rpc', ''), {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'avax.getAtomicTx',
-              params: { address, sourceChain },
-            });
-            result = response.data.result || { message: 'No atomic UTXOs found' };
-          } else if (operation === 'getXChainBalance' || operation === 'getPChainBalance') {
-            result = { message: 'Use X-Chain or P-Chain resource for balance queries' };
-          }
-        }
-        // Utility Operations
-        else if (resource === 'utility') {
-          if (operation === 'convertUnits') {
-            const value = this.getNodeParameter('value', i) as string;
-            const fromUnit = this.getNodeParameter('fromUnit', i) as string;
-            const toUnit = this.getNodeParameter('toUnit', i) as string;
-            const wei = ethers.parseUnits(value, fromUnit);
-            const converted = ethers.formatUnits(wei, toUnit);
-            result = { original: value, fromUnit, toUnit, converted, wei: wei.toString() };
-          } else if (operation === 'validateAddress') {
-            const value = this.getNodeParameter('value', i) as string;
-            const isValid = ethers.isAddress(value);
-            result = {
-              address: value,
-              isValid,
-              checksumAddress: isValid ? ethers.getAddress(value) : null,
-            };
-          } else if (operation === 'encodeFunction' || operation === 'decodeFunction') {
-            result = { message: 'Use ethers.js Interface for encoding/decoding' };
-          }
-        }
-
-        returnData.push({ json: result });
-      } catch (error) {
-        if (this.continueOnFail()) {
-          returnData.push({ json: { error: (error as Error).message } });
-          continue;
-        }
-        throw error;
-      }
+    switch (resource) {
+      case 'cChainOperations':
+        return [await executeCChainOperationsOperations.call(this, items)];
+      case 'xChainAssets':
+        return [await executeXChainAssetsOperations.call(this, items)];
+      case 'pChainStaking':
+        return [await executePChainStakingOperations.call(this, items)];
+      case 'crossChainTransfers':
+        return [await executeCrossChainTransfersOperations.call(this, items)];
+      case 'nodeInfo':
+        return [await executeNodeInfoOperations.call(this, items)];
+      case 'healthMonitoring':
+        return [await executeHealthMonitoringOperations.call(this, items)];
+      default:
+        throw new NodeOperationError(this.getNode(), `The resource "${resource}" is not supported`);
     }
-
-    return [returnData];
   }
 }
 
-function getRpcUrl(credentials: ICredentialDataDecryptedObject): string {
-  const network = credentials.network as string;
-  const rpcProvider = credentials.rpcProvider as string;
+// ============================================================
+// Resource Handler Functions
+// ============================================================
 
-  if (network === 'custom') {
-    return credentials.customNetworkUrl as string;
+async function executeCChainOperationsOperations(
+  this: IExecuteFunctions,
+  items: INodeExecutionData[],
+): Promise<INodeExecutionData[]> {
+  const returnData: INodeExecutionData[] = [];
+  const operation = this.getNodeParameter('operation', 0) as string;
+  const credentials = await this.getCredentials('avalancheApi') as any;
+
+  for (let i = 0; i < items.length; i++) {
+    try {
+      let result: any;
+      
+      const baseUrl = credentials.network === 'testnet' 
+        ? 'https://api.avax-test.network' 
+        : 'https://api.avax.network';
+
+      switch (operation) {
+        case 'getBalance': {
+          const address = this.getNodeParameter('address', i) as string;
+          const blockTag = this.getNodeParameter('blockTag', i) as string;
+          const customBlockNumber = this.getNodeParameter('customBlockNumber', i, '') as string;
+          
+          const actualBlockTag = blockTag === 'custom' ? customBlockNumber : blockTag;
+          
+          const rpcPayload = {
+            jsonrpc: '2.0',
+            method: 'eth_getBalance',
+            params: [address, actualBlockTag],
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rpcPayload),
+            json: false,
+          };
+
+          if (credentials.apiKey) {
+            options.headers['X-API-Key'] = credentials.apiKey;
+          }
+
+          const response = await this.helpers.httpRequest(options) as any;
+          const responseData = JSON.parse(response);
+          
+          if (responseData.error) {
+            throw new NodeApiError(this.getNode(), responseData.error);
+          }
+
+          result = {
+            address,
+            balance: responseData.result,
+            balanceWei: responseData.result,
+            blockTag: actualBlockTag,
+          };
+          break;
+        }
+
+        case 'sendRawTransaction': {
+          const signedTransactionData = this.getNodeParameter('signedTransactionData', i) as string;
+          
+          const rpcPayload = {
+            jsonrpc: '2.0',
+            method: 'eth_sendRawTransaction',
+            params: [signedTransactionData],
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rpcPayload),
+            json: false,
+          };
+
+          if (credentials.apiKey) {
+            options.headers['X-API-Key'] = credentials.apiKey;
+          }
+
+          const response = await this.helpers.httpRequest(options) as any;
+          const responseData = JSON.parse(response);
+          
+          if (responseData.error) {
+            throw new NodeApiError(this.getNode(), responseData.error);
+          }
+
+          result = {
+            transactionHash: responseData.result,
+          };
+          break;
+        }
+
+        case 'getTransactionByHash': {
+          const transactionHash = this.getNodeParameter('transactionHash', i) as string;
+          
+          const rpcPayload = {
+            jsonrpc: '2.0',
+            method: 'eth_getTransactionByHash',
+            params: [transactionHash],
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rpcPayload),
+            json: false,
+          };
+
+          if (credentials.apiKey) {
+            options.headers['X-API-Key'] = credentials.apiKey;
+          }
+
+          const response = await this.helpers.httpRequest(options) as any;
+          const responseData = JSON.parse(response);
+          
+          if (responseData.error) {
+            throw new NodeApiError(this.getNode(), responseData.error);
+          }
+
+          result = responseData.result;
+          break;
+        }
+
+        case 'getTransactionReceipt': {
+          const transactionHash = this.getNodeParameter('transactionHash', i) as string;
+          
+          const rpcPayload = {
+            jsonrpc: '2.0',
+            method: 'eth_getTransactionReceipt',
+            params: [transactionHash],
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rpcPayload),
+            json: false,
+          };
+
+          if (credentials.apiKey) {
+            options.headers['X-API-Key'] = credentials.apiKey;
+          }
+
+          const response = await this.helpers.httpRequest(options) as any;
+          const responseData = JSON.parse(response);
+          
+          if (responseData.error) {
+            throw new NodeApiError(this.getNode(), responseData.error);
+          }
+
+          result = responseData.result;
+          break;
+        }
+
+        case 'callContract': {
+          const toAddress = this.getNodeParameter('toAddress', i) as string;
+          const data = this.getNodeParameter('data', i, '') as string;
+          const fromAddress = this.getNodeParameter('fromAddress', i, '') as string;
+          const value = this.getNodeParameter('value', i, '0x0') as string;
+          const callBlockTag = this.getNodeParameter('callBlockTag', i, 'latest') as string;
+          const customCallBlockNumber = this.getNodeParameter('customCallBlockNumber', i, '') as string;
+          
+          const actualBlockTag = callBlockTag === 'custom' ? customCallBlockNumber : callBlockTag;
+          
+          const transactionObject: any = {
+            to: toAddress,
+            data,
+            value,
+          };
+
+          if (fromAddress) {
+            transactionObject.from = fromAddress;
+          }
+
+          const rpcPayload = {
+            jsonrpc: '2.0',
+            method: 'eth_call',
+            params: [transactionObject, actualBlockTag],
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rpcPayload),
+            json: false,
+          };
+
+          if (credentials.apiKey) {
+            options.headers['X-API-Key'] = credentials.apiKey;
+          }
+
+          const response = await this.helpers.httpRequest(options) as any;
+          const responseData = JSON.parse(response);
+          
+          if (responseData.error) {
+            throw new NodeApiError(this.getNode(), responseData.error);
+          }
+
+          result = {
+            result: responseData.result,
+            transaction: transactionObject,
+            blockTag: actualBlockTag,
+          };
+          break;
+        }
+
+        case 'estimateGas': {
+          const toAddress = this.getNodeParameter('toAddress', i) as string;
+          const data = this.getNodeParameter('data', i, '') as string;
+          const fromAddress = this.getNodeParameter('fromAddress', i, '') as string;
+          const value = this.getNodeParameter('value', i, '0x0') as string;
+          const gas = this.getNodeParameter('gas', i, '') as string;
+          const gasPrice = this.getNodeParameter('gasPrice', i, '') as string;
+          
+          const transactionObject: any = {
+            to: toAddress,
+            data,
+            value,
+          };
+
+          if (fromAddress) {
+            transactionObject.from = fromAddress;
+          }
+          if (gas) {
+            transactionObject.gas = gas;
+          }
+          if (gasPrice) {
+            transactionObject.gasPrice = gasPrice;
+          }
+
+          const rpcPayload = {
+            jsonrpc: '2.0',
+            method: 'eth_estimateGas',
+            params: [transactionObject],
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rpcPayload),
+            json: false,
+          };
+
+          if (credentials.apiKey) {
+            options.headers['X-API-Key'] = credentials.apiKey;
+          }
+
+          const response = await this.helpers.httpRequest(options) as any;
+          const responseData = JSON.parse(response);
+          
+          if (responseData.error) {
+            throw new NodeApiError(this.getNode(), responseData.error);
+          }
+
+          result = {
+            gasEstimate: responseData.result,
+            transaction: transactionObject,
+          };
+          break;
+        }
+
+        case 'getBlockByNumber': {
+          const blockNumber = this.getNodeParameter('blockNumber', i) as string;
+          const includeTransactions = this.getNodeParameter('includeTransactions', i, false) as boolean;
+          
+          const rpcPayload = {
+            jsonrpc: '2.0',
+            method: 'eth_getBlockByNumber',
+            params: [blockNumber, includeTransactions],
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rpcPayload),
+            json: false,
+          };
+
+          if (credentials.apiKey) {
+            options.headers['X-API-Key'] = credentials.apiKey;
+          }
+
+          const response = await this.helpers.httpRequest(options) as any;
+          const responseData = JSON.parse(response);
+          
+          if (responseData.error) {
+            throw new NodeApiError(this.getNode(), responseData.error);
+          }
+
+          result = responseData.result;
+          break;
+        }
+
+        default:
+          throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`);
+      }
+
+      returnData.push({ json: result, pairedItem: { item: i } });
+    } catch (error: any) {
+      if (this.continueOnFail()) {
+        returnData.push({ 
+          json: { error: error.message }, 
+          pairedItem: { item: i } 
+        });
+      } else {
+        throw error;
+      }
+    }
   }
 
-  const isMainnet = network === 'mainnet';
-  const baseMainnet = 'https://api.avax.network';
-  const baseFuji = 'https://api.avax-test.network';
-  const baseUrl = isMainnet ? baseMainnet : baseFuji;
+  return returnData;
+}
 
-  switch (rpcProvider) {
-    case 'public':
-      return `${baseUrl}/ext/bc/C/rpc`;
-    case 'infura': {
-      const infuraId = credentials.infuraProjectId as string;
-      return isMainnet
-        ? `https://avalanche-mainnet.infura.io/v3/${infuraId}`
-        : `https://avalanche-fuji.infura.io/v3/${infuraId}`;
+async function executeXChainAssetsOperations(
+  this: IExecuteFunctions,
+  items: INodeExecutionData[],
+): Promise<INodeExecutionData[]> {
+  const returnData: INodeExecutionData[] = [];
+  const operation = this.getNodeParameter('operation', 0) as string;
+  const credentials = await this.getCredentials('avalancheApi') as any;
+
+  for (let i = 0; i < items.length; i++) {
+    try {
+      let result: any;
+      const baseUrl = credentials.network === 'testnet' 
+        ? 'https://api.avax-test.network'
+        : 'https://api.avax.network';
+
+      switch (operation) {
+        case 'getBalance': {
+          const address = this.getNodeParameter('address', i) as string;
+          const assetID = this.getNodeParameter('assetID', i) as string;
+          
+          const requestBody: any = {
+            jsonrpc: '2.0',
+            method: 'avm.getBalance',
+            params: {
+              address,
+              assetID,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          };
+
+          if (credentials.apiKey) {
+            options.headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+          }
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'send': {
+          const to = this.getNodeParameter('to', i) as string;
+          const amount = this.getNodeParameter('amount', i) as number;
+          const assetID = this.getNodeParameter('assetID', i) as string;
+          const from = this.getNodeParameter('from', i) as string;
+          const changeAddr = this.getNodeParameter('changeAddr', i) as string;
+
+          const params: any = {
+            to,
+            amount: amount.toString(),
+            assetID,
+          };
+
+          if (from) params.from = [from];
+          if (changeAddr) params.changeAddr = changeAddr;
+
+          const requestBody: any = {
+            jsonrpc: '2.0',
+            method: 'avm.send',
+            params,
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          };
+
+          if (credentials.apiKey) {
+            options.headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+          }
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'createAsset': {
+          const name = this.getNodeParameter('name', i) as string;
+          const symbol = this.getNodeParameter('symbol', i) as string;
+          const denomination = this.getNodeParameter('denomination', i) as number;
+          const initialHoldersInput = this.getNodeParameter('initialHolders', i) as string;
+          
+          let initialHolders: any;
+          try {
+            initialHolders = JSON.parse(initialHoldersInput);
+          } catch (error: any) {
+            throw new NodeOperationError(this.getNode(), `Invalid JSON format for initial holders: ${error.message}`);
+          }
+
+          const requestBody: any = {
+            jsonrpc: '2.0',
+            method: 'avm.createAsset',
+            params: {
+              name,
+              symbol,
+              denomination,
+              initialHolders,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          };
+
+          if (credentials.apiKey) {
+            options.headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+          }
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getTx': {
+          const txID = this.getNodeParameter('txID', i) as string;
+
+          const requestBody: any = {
+            jsonrpc: '2.0',
+            method: 'avm.getTx',
+            params: {
+              txID,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          };
+
+          if (credentials.apiKey) {
+            options.headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+          }
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getTxStatus': {
+          const txID = this.getNodeParameter('txID', i) as string;
+
+          const requestBody: any = {
+            jsonrpc: '2.0',
+            method: 'avm.getTxStatus',
+            params: {
+              txID,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          };
+
+          if (credentials.apiKey) {
+            options.headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+          }
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getUTXOs': {
+          const addressesInput = this.getNodeParameter('addresses', i) as string;
+          const limit = this.getNodeParameter('limit', i) as number;
+          const startIndex = this.getNodeParameter('startIndex', i) as string;
+
+          const addresses = addressesInput.split(',').map((addr: string) => addr.trim());
+
+          const params: any = {
+            addresses,
+            limit,
+          };
+
+          if (startIndex) params.startIndex = startIndex;
+
+          const requestBody: any = {
+            jsonrpc: '2.0',
+            method: 'avm.getUTXOs',
+            params,
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          };
+
+          if (credentials.apiKey) {
+            options.headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+          }
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'listAddresses': {
+          const username = this.getNodeParameter('username', i) as string;
+          const password = this.getNodeParameter('password', i) as string;
+
+          const requestBody: any = {
+            jsonrpc: '2.0',
+            method: 'avm.listAddresses',
+            params: {
+              username,
+              password,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          };
+
+          if (credentials.apiKey) {
+            options.headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+          }
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        default:
+          throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`);
+      }
+
+      if (result.error) {
+        throw new NodeApiError(this.getNode(), result.error);
+      }
+
+      returnData.push({ json: result.result || result, pairedItem: { item: i } });
+    } catch (error: any) {
+      if (this.continueOnFail()) {
+        returnData.push({ 
+          json: { error: error.message || 'Unknown error occurred' }, 
+          pairedItem: { item: i } 
+        });
+      } else {
+        throw new NodeApiError(this.getNode(), error);
+      }
     }
-    case 'alchemy': {
-      const alchemyKey = credentials.alchemyApiKey as string;
-      return isMainnet
-        ? `https://avax-mainnet.g.alchemy.com/v2/${alchemyKey}`
-        : `https://avax-fuji.g.alchemy.com/v2/${alchemyKey}`;
-    }
-    case 'quicknode':
-      return credentials.quicknodeUrl as string;
-    case 'custom':
-      return credentials.customRpcUrl as string;
-    default:
-      return `${baseUrl}/ext/bc/C/rpc`;
   }
+
+  return returnData;
+}
+
+async function executePChainStakingOperations(
+  this: IExecuteFunctions,
+  items: INodeExecutionData[],
+): Promise<INodeExecutionData[]> {
+  const returnData: INodeExecutionData[] = [];
+  const operation = this.getNodeParameter('operation', 0) as string;
+  const credentials = await this.getCredentials('avalancheApi') as any;
+
+  for (let i = 0; i < items.length; i++) {
+    try {
+      let result: any;
+      
+      switch (operation) {
+        case 'getValidators': {
+          const subnetID = this.getNodeParameter('subnetID', i) as string;
+          const nodeIDs = this.getNodeParameter('nodeIDs', i) as string;
+          
+          const params: any = {};
+          if (subnetID) params.subnetID = subnetID;
+          if (nodeIDs) params.nodeIDs = nodeIDs.split(',').map((id: string) => id.trim());
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            json: true,
+            body: {
+              jsonrpc: '2.0',
+              method: 'platform.getValidators',
+              params,
+              id: 1,
+            },
+          };
+          
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getPendingValidators': {
+          const subnetID = this.getNodeParameter('subnetID', i) as string;
+          const nodeIDs = this.getNodeParameter('nodeIDs', i) as string;
+          
+          const params: any = {};
+          if (subnetID) params.subnetID = subnetID;
+          if (nodeIDs) params.nodeIDs = nodeIDs.split(',').map((id: string) => id.trim());
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            json: true,
+            body: {
+              jsonrpc: '2.0',
+              method: 'platform.getPendingValidators',
+              params,
+              id: 1,
+            },
+          };
+          
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'addValidator': {
+          const nodeID = this.getNodeParameter('nodeID', i) as string;
+          const startTime = this.getNodeParameter('startTime', i) as number;
+          const endTime = this.getNodeParameter('endTime', i) as number;
+          const stakeAmount = this.getNodeParameter('stakeAmount', i) as string;
+          const rewardAddress = this.getNodeParameter('rewardAddress', i) as string;
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            json: true,
+            body: {
+              jsonrpc: '2.0',
+              method: 'platform.addValidator',
+              params: {
+                nodeID,
+                startTime,
+                endTime,
+                stakeAmount,
+                rewardAddress,
+              },
+              id: 1,
+            },
+          };
+          
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'addDelegator': {
+          const nodeID = this.getNodeParameter('nodeID', i) as string;
+          const startTime = this.getNodeParameter('startTime', i) as number;
+          const endTime = this.getNodeParameter('endTime', i) as number;
+          const stakeAmount = this.getNodeParameter('stakeAmount', i) as string;
+          const rewardAddress = this.getNodeParameter('rewardAddress', i) as string;
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            json: true,
+            body: {
+              jsonrpc: '2.0',
+              method: 'platform.addDelegator',
+              params: {
+                nodeID,
+                startTime,
+                endTime,
+                stakeAmount,
+                rewardAddress,
+              },
+              id: 1,
+            },
+          };
+          
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getStake': {
+          const addresses = this.getNodeParameter('addresses', i) as string;
+          const validatorsOnly = this.getNodeParameter('validatorsOnly', i) as boolean;
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            json: true,
+            body: {
+              jsonrpc: '2.0',
+              method: 'platform.getStake',
+              params: {
+                addresses: addresses.split(',').map((addr: string) => addr.trim()),
+                validatorsOnly,
+              },
+              id: 1,
+            },
+          };
+          
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getCurrentValidators': {
+          const subnetID = this.getNodeParameter('subnetID', i) as string;
+          
+          const params: any = {};
+          if (subnetID) params.subnetID = subnetID;
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            json: true,
+            body: {
+              jsonrpc: '2.0',
+              method: 'platform.getCurrentValidators',
+              params,
+              id: 1,
+            },
+          };
+          
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getRewardUTXOs': {
+          const txID = this.getNodeParameter('txID', i) as string;
+          const encoding = this.getNodeParameter('encoding', i) as string;
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            json: true,
+            body: {
+              jsonrpc: '2.0',
+              method: 'platform.getRewardUTXOs',
+              params: {
+                txID,
+                encoding,
+              },
+              id: 1,
+            },
+          };
+          
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        default:
+          throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`);
+      }
+
+      if (result.error) {
+        throw new NodeApiError(this.getNode(), result.error);
+      }
+
+      returnData.push({ 
+        json: result.result || result, 
+        pairedItem: { item: i } 
+      });
+    } catch (error: any) {
+      if (this.continueOnFail()) {
+        returnData.push({ 
+          json: { error: error.message }, 
+          pairedItem: { item: i } 
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return returnData;
+}
+
+async function executeCrossChainTransfersOperations(
+  this: IExecuteFunctions,
+  items: INodeExecutionData[],
+): Promise<INodeExecutionData[]> {
+  const returnData: INodeExecutionData[] = [];
+  const operation = this.getNodeParameter('operation', 0) as string;
+  const credentials = await this.getCredentials('avalancheApi') as any;
+
+  for (let i = 0; i < items.length; i++) {
+    try {
+      let result: any;
+      const to = this.getNodeParameter('to', i) as string;
+      
+      switch (operation) {
+        case 'exportFromXChain': {
+          const amount = this.getNodeParameter('amount', i) as string;
+          const destinationChain = this.getNodeParameter('destinationChain', i) as string;
+          
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'avm.exportAVAX',
+            params: {
+              to,
+              amount,
+              destinationChain,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: requestBody,
+            json: true,
+          };
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'exportFromCChain': {
+          const amount = this.getNodeParameter('amount', i) as string;
+          const destinationChain = this.getNodeParameter('destinationChain', i) as string;
+          
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'avax.export',
+            params: {
+              to,
+              amount,
+              destinationChain,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: requestBody,
+            json: true,
+          };
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'exportFromPChain': {
+          const amount = this.getNodeParameter('amount', i) as string;
+          const destinationChain = this.getNodeParameter('destinationChain', i) as string;
+          
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'platform.exportAVAX',
+            params: {
+              to,
+              amount,
+              destinationChain,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: requestBody,
+            json: true,
+          };
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'importToXChain': {
+          const sourceChain = this.getNodeParameter('sourceChain', i) as string;
+          
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'avm.importAVAX',
+            params: {
+              to,
+              sourceChain,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: requestBody,
+            json: true,
+          };
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'importToCChain': {
+          const sourceChain = this.getNodeParameter('sourceChain', i) as string;
+          
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'avax.import',
+            params: {
+              to,
+              sourceChain,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: requestBody,
+            json: true,
+          };
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'importToPChain': {
+          const sourceChain = this.getNodeParameter('sourceChain', i) as string;
+          
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'platform.importAVAX',
+            params: {
+              to,
+              sourceChain,
+            },
+            id: 1,
+          };
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: requestBody,
+            json: true,
+          };
+
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        default:
+          throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`);
+      }
+
+      if (result.error) {
+        throw new NodeApiError(this.getNode(), result.error);
+      }
+
+      returnData.push({ json: result, pairedItem: { item: i } });
+    } catch (error: any) {
+      if (this.continueOnFail()) {
+        returnData.push({ json: { error: error.message }, pairedItem: { item: i } });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return returnData;
+}
+
+async function executeNodeInfoOperations(
+  this: IExecuteFunctions,
+  items: INodeExecutionData[],
+): Promise<INodeExecutionData[]> {
+  const returnData: INodeExecutionData[] = [];
+  const operation = this.getNodeParameter('operation', 0) as string;
+  const credentials = await this.getCredentials('avalancheApi') as any;
+
+  for (let i = 0; i < items.length; i++) {
+    try {
+      let result: any;
+      
+      const baseOptions: any = {
+        method: 'POST',
+        url: `${credentials.baseUrl}/ext/info`,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        json: true,
+      };
+
+      switch (operation) {
+        case 'getNodeVersion': {
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'info.getNodeVersion',
+            params: {},
+            id: 1,
+          };
+          
+          const options: any = {
+            ...baseOptions,
+            body: requestBody,
+          };
+          
+          const response = await this.helpers.httpRequest(options) as any;
+          result = response.result || response;
+          break;
+        }
+
+        case 'getNodeID': {
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'info.getNodeID',
+            params: {},
+            id: 1,
+          };
+          
+          const options: any = {
+            ...baseOptions,
+            body: requestBody,
+          };
+          
+          const response = await this.helpers.httpRequest(options) as any;
+          result = response.result || response;
+          break;
+        }
+
+        case 'getNetworkID': {
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'info.getNetworkID',
+            params: {},
+            id: 1,
+          };
+          
+          const options: any = {
+            ...baseOptions,
+            body: requestBody,
+          };
+          
+          const response = await this.helpers.httpRequest(options) as any;
+          result = response.result || response;
+          break;
+        }
+
+        case 'getNetworkName': {
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'info.getNetworkName',
+            params: {},
+            id: 1,
+          };
+          
+          const options: any = {
+            ...baseOptions,
+            body: requestBody,
+          };
+          
+          const response = await this.helpers.httpRequest(options) as any;
+          result = response.result || response;
+          break;
+        }
+
+        case 'getBlockchainID': {
+          const alias = this.getNodeParameter('alias', i) as string;
+          
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'info.getBlockchainID',
+            params: {
+              alias: alias,
+            },
+            id: 1,
+          };
+          
+          const options: any = {
+            ...baseOptions,
+            body: requestBody,
+          };
+          
+          const response = await this.helpers.httpRequest(options) as any;
+          result = response.result || response;
+          break;
+        }
+
+        case 'getPeers': {
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'info.peers',
+            params: {},
+            id: 1,
+          };
+          
+          const options: any = {
+            ...baseOptions,
+            body: requestBody,
+          };
+          
+          const response = await this.helpers.httpRequest(options) as any;
+          result = response.result || response;
+          break;
+        }
+
+        case 'isBootstrapped': {
+          const chain = this.getNodeParameter('chain', i) as string;
+          
+          const requestBody = {
+            jsonrpc: '2.0',
+            method: 'info.isBootstrapped',
+            params: {
+              chain: chain,
+            },
+            id: 1,
+          };
+          
+          const options: any = {
+            ...baseOptions,
+            body: requestBody,
+          };
+          
+          const response = await this.helpers.httpRequest(options) as any;
+          result = response.result || response;
+          break;
+        }
+
+        default:
+          throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`);
+      }
+
+      returnData.push({ json: result, pairedItem: { item: i } });
+    } catch (error: any) {
+      if (this.continueOnFail()) {
+        returnData.push({ json: { error: error.message }, pairedItem: { item: i } });
+      } else {
+        if (error.response && error.response.body && error.response.body.error) {
+          throw new NodeApiError(this.getNode(), error.response.body.error);
+        }
+        throw new NodeOperationError(this.getNode(), error.message);
+      }
+    }
+  }
+
+  return returnData;
+}
+
+async function executeHealthMonitoringOperations(
+  this: IExecuteFunctions,
+  items: INodeExecutionData[],
+): Promise<INodeExecutionData[]> {
+  const returnData: INodeExecutionData[] = [];
+  const operation = this.getNodeParameter('operation', 0) as string;
+  const credentials = await this.getCredentials('avalancheApi') as any;
+
+  for (let i = 0; i < items.length; i++) {
+    try {
+      let result: any;
+
+      switch (operation) {
+        case 'getLiveness': {
+          const options: any = {
+            method: 'GET',
+            url: `${credentials.baseUrl}/ext/health`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            json: true,
+          };
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getReadiness': {
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/health`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: {
+              jsonrpc: '2.0',
+              method: 'health.getReadiness',
+              params: {},
+              id: 1,
+            },
+            json: true,
+          };
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getHealth': {
+          const tags = this.getNodeParameter('tags', i) as string;
+          const params: any = {};
+          if (tags) {
+            params.tags = tags.split(',').map((tag: string) => tag.trim());
+          }
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/health`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: {
+              jsonrpc: '2.0',
+              method: 'health.health',
+              params,
+              id: 1,
+            },
+            json: true,
+          };
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'issueAvmTx': {
+          const tx = this.getNodeParameter('tx', i) as string;
+          const encoding = this.getNodeParameter('encoding', i) as string;
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/bc/X`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: {
+              jsonrpc: '2.0',
+              method: 'avm.issueTx',
+              params: {
+                tx,
+                encoding,
+              },
+              id: 1,
+            },
+            json: true,
+          };
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'issuePlatformTx': {
+          const tx = this.getNodeParameter('tx', i) as string;
+          const encoding = this.getNodeParameter('encoding', i) as string;
+
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/P`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: {
+              jsonrpc: '2.0',
+              method: 'platform.issueTx',
+              params: {
+                tx,
+                encoding,
+              },
+              id: 1,
+            },
+            json: true,
+          };
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        case 'getLatestBlockNumber': {
+          const options: any = {
+            method: 'POST',
+            url: `${credentials.baseUrl}/ext/bc/C/rpc`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: {
+              jsonrpc: '2.0',
+              method: 'eth_blockNumber',
+              params: [],
+              id: 1,
+            },
+            json: true,
+          };
+          result = await this.helpers.httpRequest(options) as any;
+          break;
+        }
+
+        default:
+          throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`);
+      }
+
+      returnData.push({ json: result, pairedItem: { item: i } });
+    } catch (error: any) {
+      if (this.continueOnFail()) {
+        returnData.push({ json: { error: error.message }, pairedItem: { item: i } });
+      } else {
+        throw new NodeApiError(this.getNode(), error);
+      }
+    }
+  }
+
+  return returnData;
 }
