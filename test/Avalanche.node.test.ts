@@ -67,15 +67,168 @@ describe('Avalanche Node', () => {
   });
 
   // Resource-specific tests
-describe('CChainOperations Resource', () => {
+describe('CChain Resource', () => {
+  let mockExecuteFunctions: any;
+  
+  beforeEach(() => {
+    mockExecuteFunctions = {
+      getNodeParameter: jest.fn(),
+      getCredentials: jest.fn().mockResolvedValue({ apiKey: 'test-key', baseUrl: 'https://api.avax.network' }),
+      getInputData: jest.fn().mockReturnValue([{ json: {} }]),
+      getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
+      continueOnFail: jest.fn().mockReturnValue(false),
+      helpers: { httpRequest: jest.fn(), requestWithAuthentication: jest.fn() },
+    };
+  });
+  
+  it('should get balance successfully', async () => {
+    mockExecuteFunctions.getNodeParameter
+      .mockReturnValueOnce('getBalance')
+      .mockReturnValueOnce('0x1234567890abcdef')
+      .mockReturnValueOnce('latest')
+      .mockReturnValueOnce('');
+    
+    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+      jsonrpc: '2.0',
+      id: 1,
+      result: '0x1bc16d674ec80000',
+    });
+    
+    const result = await executeCChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
+    expect(result).toHaveLength(1);
+    expect(result[0].json.result).toBe('0x1bc16d674ec80000');
+  });
+  
+  it('should handle errors gracefully', async () => {
+    mockExecuteFunctions.getNodeParameter.mockReturnValueOnce('getBalance');
+    mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('API Error'));
+    mockExecuteFunctions.continueOnFail.mockReturnValue(true);
+    
+    const result = await executeCChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
+    expect(result).toHaveLength(1);
+    expect(result[0].json.error).toBe('API Error');
+  });
+  
+  it('should get transaction successfully', async () => {
+    mockExecuteFunctions.getNodeParameter
+      .mockReturnValueOnce('getTransaction')
+      .mockReturnValueOnce('0xabcdef1234567890');
+    
+    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+      jsonrpc: '2.0',
+      id: 1,
+      result: { hash: '0xabcdef1234567890', blockNumber: '0x1b4' },
+    });
+    
+    const result = await executeCChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
+    expect(result).toHaveLength(1);
+    expect(result[0].json.result.hash).toBe('0xabcdef1234567890');
+  });
+  
+  it('should send transaction successfully', async () => {
+    mockExecuteFunctions.getNodeParameter
+      .mockReturnValueOnce('sendTransaction')
+      .mockReturnValueOnce('0xf86c808504a817c800825208941234567890abcdef');
+    
+    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+      jsonrpc: '2.0',
+      id: 1,
+      result: '0xabcdef1234567890',
+    });
+    
+    const result = await executeCChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
+    expect(result).toHaveLength(1);
+    expect(result[0].json.result).toBe('0xabcdef1234567890');
+  });
+});
+
+describe('XChain Resource', () => {
+  let mockExecuteFunctions: any;
+
+  beforeEach(() => {
+    mockExecuteFunctions = {
+      getNodeParameter: jest.fn(),
+      getCredentials: jest.fn().mockResolvedValue({ 
+        apiKey: 'test-key', 
+        baseUrl: 'https://api.avax.network' 
+      }),
+      getInputData: jest.fn().mockReturnValue([{ json: {} }]),
+      getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
+      continueOnFail: jest.fn().mockReturnValue(false),
+      helpers: { 
+        httpRequest: jest.fn(),
+        requestWithAuthentication: jest.fn() 
+      },
+    };
+  });
+
+  test('getBalance operation should execute successfully', async () => {
+    mockExecuteFunctions.getNodeParameter
+      .mockReturnValueOnce('getBalance')
+      .mockReturnValueOnce('X-avax1test')
+      .mockReturnValueOnce('AVAX');
+
+    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+      jsonrpc: '2.0',
+      result: { balance: '1000000000' },
+      id: 1
+    });
+
+    const result = await executeXChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
+    expect(result).toHaveLength(1);
+    expect(result[0].json.result.balance).toBe('1000000000');
+    expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: 'https://api.avax.network/ext/bc/X'
+      })
+    );
+  });
+
+  test('getTx operation should execute successfully', async () => {
+    mockExecuteFunctions.getNodeParameter
+      .mockReturnValueOnce('getTx')
+      .mockReturnValueOnce('txid123')
+      .mockReturnValueOnce('json');
+
+    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+      jsonrpc: '2.0',
+      result: { tx: { id: 'txid123' } },
+      id: 1
+    });
+
+    const result = await executeXChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
+    expect(result).toHaveLength(1);
+    expect(result[0].json.result.tx.id).toBe('txid123');
+  });
+
+  test('error handling should work correctly', async () => {
+    mockExecuteFunctions.getNodeParameter.mockReturnValueOnce('getBalance');
+    mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('API Error'));
+    mockExecuteFunctions.continueOnFail.mockReturnValue(true);
+
+    const result = await executeXChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
+    expect(result).toHaveLength(1);
+    expect(result[0].json.error).toBe('API Error');
+  });
+});
+
+describe('PChain Resource', () => {
   let mockExecuteFunctions: any;
 
   beforeEach(() => {
     mockExecuteFunctions = {
       getNodeParameter: jest.fn(),
       getCredentials: jest.fn().mockResolvedValue({
-        apiKey: 'test-api-key',
-        network: 'mainnet',
+        apiKey: 'test-key',
+        baseUrl: 'https://api.avax.network',
       }),
       getInputData: jest.fn().mockReturnValue([{ json: {} }]),
       getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
@@ -88,1197 +241,517 @@ describe('CChainOperations Resource', () => {
   });
 
   describe('getBalance operation', () => {
-    it('should get account balance successfully', async () => {
-      const mockResponse = JSON.stringify({
+    it('should get balance successfully', async () => {
+      mockExecuteFunctions.getNodeParameter
+        .mockReturnValueOnce('getBalance')
+        .mockReturnValueOnce('P-avax1test');
+
+      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
         jsonrpc: '2.0',
+        result: { balance: '1000000000' },
         id: 1,
-        result: '0x1b1ae4d6e2ef500000'
       });
 
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        switch (paramName) {
-          case 'operation': return 'getBalance';
-          case 'address': return '0x742d35Cc6634C0532925a3b8D4C13b0F6eBfDc52';
-          case 'blockTag': return 'latest';
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const items = [{ json: {} }];
-      const result = await executeCChainOperationsOperations.call(mockExecuteFunctions, items);
+      const result = await executePChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
       expect(result).toHaveLength(1);
-      expect(result[0].json.balance).toBe('0x1b1ae4d6e2ef500000');
-      expect(result[0].json.address).toBe('0x742d35Cc6634C0532925a3b8D4C13b0F6eBfDc52');
+      expect(result[0].json.result.balance).toBe('1000000000');
     });
 
-    it('should handle API errors', async () => {
-      const mockErrorResponse = JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        error: { code: -32602, message: 'Invalid params' }
-      });
+    it('should handle getBalance error', async () => {
+      mockExecuteFunctions.getNodeParameter
+        .mockReturnValueOnce('getBalance')
+        .mockReturnValueOnce('invalid-address');
 
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        switch (paramName) {
-          case 'operation': return 'getBalance';
-          case 'address': return 'invalid-address';
-          case 'blockTag': return 'latest';
-          default: return '';
-        }
-      });
+      mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('Invalid address'));
+      mockExecuteFunctions.continueOnFail.mockReturnValue(true);
 
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockErrorResponse);
-
-      const items = [{ json: {} }];
-      
-      await expect(
-        executeCChainOperationsOperations.call(mockExecuteFunctions, items)
-      ).rejects.toThrow();
-    });
-  });
-
-  describe('sendRawTransaction operation', () => {
-    it('should send raw transaction successfully', async () => {
-      const mockResponse = JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        result: '0x1234567890abcdef'
-      });
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        switch (paramName) {
-          case 'operation': return 'sendRawTransaction';
-          case 'signedTransactionData': return '0xf86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83';
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const items = [{ json: {} }];
-      const result = await executeCChainOperationsOperations.call(mockExecuteFunctions, items);
+      const result = await executePChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
       expect(result).toHaveLength(1);
-      expect(result[0].json.transactionHash).toBe('0x1234567890abcdef');
+      expect(result[0].json.error).toBe('Invalid address');
     });
   });
 
-  describe('getTransactionByHash operation', () => {
-    it('should get transaction by hash successfully', async () => {
-      const mockTransaction = {
-        blockHash: '0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2',
-        blockNumber: '0x5daf3b',
-        from: '0xa7d9ddbe1f17865597fbd27ec712455208b6b76d',
-        gas: '0xc350',
-        gasPrice: '0x4a817c800',
-        hash: '0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b',
-        input: '0x68656c6c6f21',
-        nonce: '0x15',
-        to: '0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb',
-        transactionIndex: '0x41',
-        value: '0xf3dbb76162000',
-        v: '0x25',
-        r: '0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea',
-        s: '0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c'
-      };
+  describe('getCurrentValidators operation', () => {
+    it('should get current validators successfully', async () => {
+      mockExecuteFunctions.getNodeParameter
+        .mockReturnValueOnce('getCurrentValidators')
+        .mockReturnValueOnce('')
+        .mockReturnValueOnce('');
 
-      const mockResponse = JSON.stringify({
+      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
         jsonrpc: '2.0',
+        result: { validators: [] },
         id: 1,
-        result: mockTransaction
       });
 
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        switch (paramName) {
-          case 'operation': return 'getTransactionByHash';
-          case 'transactionHash': return '0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b';
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const items = [{ json: {} }];
-      const result = await executeCChainOperationsOperations.call(mockExecuteFunctions, items);
+      const result = await executePChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
       expect(result).toHaveLength(1);
-      expect(result[0].json.hash).toBe('0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b');
-      expect(result[0].json.from).toBe('0xa7d9ddbe1f17865597fbd27ec712455208b6b76d');
+      expect(result[0].json.result.validators).toEqual([]);
     });
   });
 
-  describe('callContract operation', () => {
-    it('should execute contract call successfully', async () => {
-      const mockResponse = JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        result: '0x0000000000000000000000000000000000000000000000000000000000000020'
-      });
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        switch (paramName) {
-          case 'operation': return 'callContract';
-          case 'toAddress': return '0x742d35Cc6634C0532925a3b8D4C13b0F6eBfDc52';
-          case 'data': return '0x70a08231000000000000000000000000742d35cc6634c0532925a3b8d4c13b0f6ebfdc52';
-          case 'value': return '0x0';
-          case 'callBlockTag': return 'latest';
-          case 'fromAddress': return '';
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const items = [{ json: {} }];
-      const result = await executeCChainOperationsOperations.call(mockExecuteFunctions, items);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].json.result).toBe('0x0000000000000000000000000000000000000000000000000000000000000020');
-      expect(result[0].json.transaction.to).toBe('0x742d35Cc6634C0532925a3b8D4C13b0F6eBfDc52');
-    });
-  });
-
-  describe('estimateGas operation', () => {
-    it('should estimate gas successfully', async () => {
-      const mockResponse = JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        result: '0x5208'
-      });
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        switch (paramName) {
-          case 'operation': return 'estimateGas';
-          case 'toAddress': return '0x742d35Cc6634C0532925a3b8D4C13b0F6eBfDc52';
-          case 'data': return '';
-          case 'value': return '0x0';
-          case 'fromAddress': return '0xa7d9ddbe1f17865597fbd27ec712455208b6b76d';
-          case 'gas': return '';
-          case 'gasPrice': return '';
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const items = [{ json: {} }];
-      const result = await executeCChainOperationsOperations.call(mockExecuteFunctions, items);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].json.gasEstimate).toBe('0x5208');
-      expect(result[0].json.transaction.to).toBe('0x742d35Cc6634C0532925a3b8D4C13b0F6eBfDc52');
-    });
-  });
-
-  describe('getBlockByNumber operation', () => {
-    it('should get block by number successfully', async () => {
-      const mockBlock = {
-        difficulty: '0x4ea3f27bc',
-        extraData: '0x476574682f4c5649562f76312e302e302f6c696e75782f676f312e342e32',
-        gasLimit: '0x1388',
-        gasUsed: '0x0',
-        hash: '0xdc0818cf78f21a8e70579cb46a43643f78291264dda342ae31049421c82d21ae',
-        logsBloom: '0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
-        miner: '0xbb7b8287f3f0a933474a79eae42cbca977791171',
-        mixHash: '0x4fffe9ae21f1c9e15207b1f472d5bbdd68c9595d461666602f2be20daf5e7843',
-        nonce: '0x689056015818adbe',
-        number: '0x1b4',
-        parentHash: '0xe99e022112df268087ea7eafaf4790497fd21dbeeb6bd7a1721df161a6657a54',
-        receiptsRoot: '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
-        sha3Uncles: '0x1dcc4
-
-describe('XChainAssets Resource', () => {
-  let mockExecuteFunctions: any;
-
-  beforeEach(() => {
-    mockExecuteFunctions = {
-      getNodeParameter: jest.fn(),
-      getCredentials: jest.fn().mockResolvedValue({
-        network: 'testnet',
-        apiKey: 'test-api-key',
-      }),
-      getInputData: jest.fn().mockReturnValue([{ json: {} }]),
-      getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
-      continueOnFail: jest.fn().mockReturnValue(false),
-      helpers: {
-        httpRequest: jest.fn(),
-      },
-    };
-  });
-
-  test('should get balance successfully', async () => {
-    const mockResponse = {
-      result: {
-        balance: '1000000000',
-        utxoIDs: [
-          {
-            txID: 'test-tx-id',
-            outputIndex: 0,
-          },
-        ],
-      },
-    };
-
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'getBalance';
-        case 'address': return 'X-avax1test...';
-        case 'assetID': return 'AVAX';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-    const result = await executeXChainAssetsOperations.call(
-      mockExecuteFunctions,
-      [{ json: {} }]
-    );
-
-    expect(result).toHaveLength(1);
-    expect(result[0].json).toEqual(mockResponse.result);
-  });
-
-  test('should send assets successfully', async () => {
-    const mockResponse = {
-      result: {
-        txID: 'test-tx-id-123',
-      },
-    };
-
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'send';
-        case 'to': return 'X-avax1recipient...';
-        case 'amount': return 1000000;
-        case 'assetID': return 'AVAX';
-        case 'from': return 'X-avax1sender...';
-        case 'changeAddr': return '';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-    const result = await executeXChainAssetsOperations.call(
-      mockExecuteFunctions,
-      [{ json: {} }]
-    );
-
-    expect(result).toHaveLength(1);
-    expect(result[0].json).toEqual(mockResponse.result);
-  });
-
-  test('should create asset successfully', async () => {
-    const mockResponse = {
-      result: {
-        assetID: 'new-asset-id',
-        changeAddr: 'X-avax1change...',
-      },
-    };
-
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'createAsset';
-        case 'name': return 'Test Token';
-        case 'symbol': return 'TEST';
-        case 'denomination': return 8;
-        case 'initialHolders': return '[{"address": "X-avax1holder...", "amount": "1000"}]';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-    const result = await executeXChainAssetsOperations.call(
-      mockExecuteFunctions,
-      [{ json: {} }]
-    );
-
-    expect(result).toHaveLength(1);
-    expect(result[0].json).toEqual(mockResponse.result);
-  });
-
-  test('should handle API errors', async () => {
-    const mockError = new Error('API request failed');
-
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'getBalance';
-        case 'address': return 'invalid-address';
-        case 'assetID': return 'AVAX';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(mockError);
-
-    await expect(
-      executeXChainAssetsOperations.call(mockExecuteFunctions, [{ json: {} }])
-    ).rejects.toThrow();
-  });
-
-  test('should continue on fail when enabled', async () => {
-    const mockError = new Error('API request failed');
-
-    mockExecuteFunctions.continueOnFail.mockReturnValue(true);
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'getBalance';
-        case 'address': return 'invalid-address';
-        case 'assetID': return 'AVAX';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(mockError);
-
-    const result = await executeXChainAssetsOperations.call(
-      mockExecuteFunctions,
-      [{ json: {} }]
-    );
-
-    expect(result).toHaveLength(1);
-    expect(result[0].json.error).toBe('API request failed');
-  });
-});
-
-describe('PChainStaking Resource', () => {
-  let mockExecuteFunctions: any;
-
-  beforeEach(() => {
-    mockExecuteFunctions = {
-      getNodeParameter: jest.fn(),
-      getCredentials: jest.fn().mockResolvedValue({
-        apiKey: 'test-api-key',
-        baseUrl: 'https://api.avax.network',
-      }),
-      getInputData: jest.fn().mockReturnValue([{ json: {} }]),
-      getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
-      continueOnFail: jest.fn().mockReturnValue(false),
-      helpers: {
-        httpRequest: jest.fn(),
-        requestWithAuthentication: jest.fn(),
-      },
-    };
-  });
-
-  describe('getValidators', () => {
-    it('should get validators successfully', async () => {
-      const mockResponse = {
-        jsonrpc: '2.0',
-        result: {
-          validators: [
-            {
-              txID: 'test-tx-id',
-              startTime: '1234567890',
-              endTime: '1234567900',
-              stakeAmount: '2000000000000',
-              nodeID: 'test-node-id',
-            },
-          ],
-        },
-        id: 1,
-      };
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
-        switch (param) {
-          case 'operation': return 'getValidators';
-          case 'subnetID': return 'test-subnet-id';
-          case 'nodeIDs': return 'node1,node2';
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const items = [{ json: {} }];
-      const result = await executePChainStakingOperations.call(mockExecuteFunctions, items);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].json).toEqual(mockResponse.result);
-      expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-        method: 'POST',
-        url: 'https://api.avax.network/ext/P',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        json: true,
-        body: {
-          jsonrpc: '2.0',
-          method: 'platform.getValidators',
-          params: {
-            subnetID: 'test-subnet-id',
-            nodeIDs: ['node1', 'node2'],
-          },
-          id: 1,
-        },
-      });
-    });
-  });
-
-  describe('addValidator', () => {
+  describe('addValidator operation', () => {
     it('should add validator successfully', async () => {
-      const mockResponse = {
-        jsonrpc: '2.0',
-        result: {
-          txID: 'test-tx-id',
-        },
-        id: 1,
-      };
+      mockExecuteFunctions.getNodeParameter
+        .mockReturnValueOnce('addValidator')
+        .mockReturnValueOnce('NodeID-test')
+        .mockReturnValueOnce(1640995200)
+        .mockReturnValueOnce(1672531200)
+        .mockReturnValueOnce('2000000000000');
 
-      mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
-        switch (param) {
-          case 'operation': return 'addValidator';
-          case 'nodeID': return 'test-node-id';
-          case 'startTime': return 1234567890;
-          case 'endTime': return 1234567900;
-          case 'stakeAmount': return '2000000000000';
-          case 'rewardAddress': return 'test-reward-address';
-          default: return '';
-        }
+      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+        jsonrpc: '2.0',
+        result: { txID: 'tx123' },
+        id: 1,
       });
 
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const items = [{ json: {} }];
-      const result = await executePChainStakingOperations.call(mockExecuteFunctions, items);
+      const result = await executePChainOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
       expect(result).toHaveLength(1);
-      expect(result[0].json).toEqual(mockResponse.result);
-      expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-        method: 'POST',
-        url: 'https://api.avax.network/ext/P',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        json: true,
-        body: {
-          jsonrpc: '2.0',
-          method: 'platform.addValidator',
-          params: {
-            nodeID: 'test-node-id',
-            startTime: 1234567890,
-            endTime: 1234567900,
-            stakeAmount: '2000000000000',
-            rewardAddress: 'test-reward-address',
-          },
-          id: 1,
-        },
-      });
-    });
-  });
-
-  describe('getStake', () => {
-    it('should get stake successfully', async () => {
-      const mockResponse = {
-        jsonrpc: '2.0',
-        result: {
-          staked: '1000000000000',
-          stakedOutputs: [],
-        },
-        id: 1,
-      };
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
-        switch (param) {
-          case 'operation': return 'getStake';
-          case 'addresses': return 'addr1,addr2';
-          case 'validatorsOnly': return true;
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const items = [{ json: {} }];
-      const result = await executePChainStakingOperations.call(mockExecuteFunctions, items);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].json).toEqual(mockResponse.result);
-      expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-        method: 'POST',
-        url: 'https://api.avax.network/ext/P',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        json: true,
-        body: {
-          jsonrpc: '2.0',
-          method: 'platform.getStake',
-          params: {
-            addresses: ['addr1', 'addr2'],
-            validatorsOnly: true,
-          },
-          id: 1,
-        },
-      });
-    });
-  });
-
-  describe('error handling', () => {
-    it('should handle API errors', async () => {
-      const mockError = {
-        jsonrpc: '2.0',
-        error: {
-          code: -32000,
-          message: 'Invalid node ID',
-        },
-        id: 1,
-      };
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
-        switch (param) {
-          case 'operation': return 'getValidators';
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockError);
-
-      const items = [{ json: {} }];
-      
-      await expect(
-        executePChainStakingOperations.call(mockExecuteFunctions, items)
-      ).rejects.toThrow();
-    });
-
-    it('should handle network errors gracefully with continueOnFail', async () => {
-      mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
-        switch (param) {
-          case 'operation': return 'getValidators';
-          default: return '';
-        }
-      });
-
-      mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('Network error'));
-      mockExecuteFunctions.continueOnFail.mockReturnValue(true);
-
-      const items = [{ json: {} }];
-      const result = await executePChainStakingOperations.call(mockExecuteFunctions, items);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].json).toEqual({ error: 'Network error' });
+      expect(result[0].json.result.txID).toBe('tx123');
     });
   });
 });
 
-describe('CrossChainTransfers Resource', () => {
-  let mockExecuteFunctions: any;
+describe('Subnet Resource', () => {
+	let mockExecuteFunctions: any;
 
+	beforeEach(() => {
+		mockExecuteFunctions = {
+			getNodeParameter: jest.fn(),
+			getCredentials: jest.fn().mockResolvedValue({
+				apiKey: 'test-key',
+				baseUrl: 'https://api.avax.network',
+			}),
+			getInputData: jest.fn().mockReturnValue([{ json: {} }]),
+			getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
+			continueOnFail: jest.fn().mockReturnValue(false),
+			helpers: {
+				httpRequest: jest.fn(),
+				requestWithAuthentication: jest.fn(),
+			},
+		};
+	});
+
+	it('should get subnets successfully', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'getSubnets';
+			if (param === 'ids') return 'subnet1,subnet2';
+			return undefined;
+		});
+
+		mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+			jsonrpc: '2.0',
+			id: 1,
+			result: {
+				subnets: [{ id: 'subnet1' }, { id: 'subnet2' }],
+			},
+		});
+
+		const items = [{ json: {} }];
+		const result = await executeSubnetOperations.call(mockExecuteFunctions, items);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].json).toEqual({
+			subnets: [{ id: 'subnet1' }, { id: 'subnet2' }],
+		});
+	});
+
+	it('should create subnet successfully', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'createSubnet';
+			if (param === 'controlKeys') return 'key1,key2';
+			if (param === 'threshold') return 2;
+			return undefined;
+		});
+
+		mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+			jsonrpc: '2.0',
+			id: 1,
+			result: {
+				subnetID: 'new-subnet-id',
+			},
+		});
+
+		const items = [{ json: {} }];
+		const result = await executeSubnetOperations.call(mockExecuteFunctions, items);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].json).toEqual({
+			subnetID: 'new-subnet-id',
+		});
+	});
+
+	it('should validate subnet successfully', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'validateSubnet';
+			if (param === 'nodeID') return 'node-123';
+			if (param === 'subnetID') return 'subnet-456';
+			if (param === 'startTime') return '2024-01-01T00:00:00Z';
+			if (param === 'endTime') return '2024-12-31T23:59:59Z';
+			return undefined;
+		});
+
+		mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+			jsonrpc: '2.0',
+			id: 1,
+			result: {
+				txID: 'validator-tx-id',
+			},
+		});
+
+		const items = [{ json: {} }];
+		const result = await executeSubnetOperations.call(mockExecuteFunctions, items);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].json).toEqual({
+			txID: 'validator-tx-id',
+		});
+	});
+
+	it('should get blockchains successfully', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'getBlockchains';
+			return undefined;
+		});
+
+		mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+			jsonrpc: '2.0',
+			id: 1,
+			result: {
+				blockchains: [{ id: 'blockchain1' }, { id: 'blockchain2' }],
+			},
+		});
+
+		const items = [{ json: {} }];
+		const result = await executeSubnetOperations.call(mockExecuteFunctions, items);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].json).toEqual({
+			blockchains: [{ id: 'blockchain1' }, { id: 'blockchain2' }],
+		});
+	});
+
+	it('should create blockchain successfully', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'createBlockchain';
+			if (param === 'subnetID') return 'subnet-123';
+			if (param === 'vmID') return 'vm-456';
+			if (param === 'name') return 'MyBlockchain';
+			if (param === 'genesisData') return '{"test": "data"}';
+			return undefined;
+		});
+
+		mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+			jsonrpc: '2.0',
+			id: 1,
+			result: {
+				blockchainID: 'new-blockchain-id',
+			},
+		});
+
+		const items = [{ json: {} }];
+		const result = await executeSubnetOperations.call(mockExecuteFunctions, items);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].json).toEqual({
+			blockchainID: 'new-blockchain-id',
+		});
+	});
+
+	it('should get network ID successfully', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'getNetworkID';
+			return undefined;
+		});
+
+		mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+			jsonrpc: '2.0',
+			id: 1,
+			result: {
+				networkID: 1,
+			},
+		});
+
+		const items = [{ json: {} }];
+		const result = await executeSubnetOperations.call(mockExecuteFunctions, items);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].json).toEqual({
+			networkID: 1,
+		});
+	});
+
+	it('should get network name successfully', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'getNetworkName';
+			return undefined;
+		});
+
+		mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+			jsonrpc: '2.0',
+			id: 1,
+			result: {
+				networkName: 'mainnet',
+			},
+		});
+
+		const items = [{ json: {} }];
+		const result = await executeSubnetOperations.call(mockExecuteFunctions, items);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].json).toEqual({
+			networkName: 'mainnet',
+		});
+	});
+
+	it('should handle API errors', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'getSubnets';
+			return undefined;
+		});
+
+		mockExecuteFunctions.helpers.httpRequest.mockResolvedValue({
+			jsonrpc: '2.0',
+			id: 1,
+			error: {
+				code: -32000,
+				message: 'Invalid subnet ID',
+			},
+		});
+
+		const items = [{ json: {} }];
+
+		await expect(executeSubnetOperations.call(mockExecuteFunctions, items)).rejects.toThrow();
+	});
+
+	it('should handle errors with continueOnFail', async () => {
+		mockExecuteFunctions.getNodeParameter.mockImplementation((param: string) => {
+			if (param === 'operation') return 'getSubnets';
+			return undefined;
+		});
+
+		mockExecuteFunctions.continueOnFail.mockReturnValue(true);
+		mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('Network error'));
+
+		const items = [{ json: {} }];
+		const result = await executeSubnetOperations.call(mockExecuteFunctions, items);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].json.error).toBe('Network error');
+	});
+});
+
+describe('Asset Resource', () => {
+  let mockExecuteFunctions: any;
+  
   beforeEach(() => {
     mockExecuteFunctions = {
       getNodeParameter: jest.fn(),
-      getCredentials: jest.fn().mockResolvedValue({
-        apiKey: 'test-api-key',
-        baseUrl: 'https://api.avax-test.network',
-      }),
+      getCredentials: jest.fn().mockResolvedValue({ apiKey: 'test-key', baseUrl: 'https://api.avax.network' }),
       getInputData: jest.fn().mockReturnValue([{ json: {} }]),
       getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
       continueOnFail: jest.fn().mockReturnValue(false),
-      helpers: {
-        httpRequest: jest.fn(),
-        requestWithAuthentication: jest.fn(),
-      },
+      helpers: { httpRequest: jest.fn(), requestWithAuthentication: jest.fn() },
     };
   });
 
-  test('should export AVAX from X-Chain successfully', async () => {
-    const mockResponse = {
-      jsonrpc: '2.0',
-      result: {
-        txID: 'test-transaction-id',
-        changeAddr: 'X-test-change-address',
-      },
-      id: 1,
-    };
-
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'exportFromXChain';
-        case 'to': return 'P-test-address';
-        case 'amount': return '1000000000';
-        case 'destinationChain': return 'P';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-    const items = [{ json: {} }];
-    const result = await executeCrossChainTransfersOperations.call(mockExecuteFunctions, items);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].json).toEqual(mockResponse);
-    expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-      method: 'POST',
-      url: 'https://api.avax-test.network/ext/bc/X',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: {
+  it('should get asset description successfully', async () => {
+    mockExecuteFunctions.getNodeParameter
+      .mockReturnValueOnce('getAssetDescription')
+      .mockReturnValueOnce('2fombhL7aGPwj3KH4bfrmJwW6PVnMobf9Y2fn9GwxiAAJyFDbe');
+    
+    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(
+      JSON.stringify({
         jsonrpc: '2.0',
-        method: 'avm.exportAVAX',
-        params: {
-          to: 'P-test-address',
-          amount: '1000000000',
-          destinationChain: 'P',
+        result: {
+          name: 'Test Asset',
+          symbol: 'TEST',
+          denomination: 8
         },
-        id: 1,
-      },
-      json: true,
-    });
-  });
+        id: 1
+      })
+    );
 
-  test('should export AVAX from C-Chain successfully', async () => {
-    const mockResponse = {
-      jsonrpc: '2.0',
-      result: {
-        txID: 'test-transaction-id',
-      },
-      id: 1,
-    };
-
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'exportFromCChain';
-        case 'to': return 'X-test-address';
-        case 'amount': return '500000000';
-        case 'destinationChain': return 'X';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-    const items = [{ json: {} }];
-    const result = await executeCrossChainTransfersOperations.call(mockExecuteFunctions, items);
-
+    const result = await executeAssetOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
     expect(result).toHaveLength(1);
-    expect(result[0].json).toEqual(mockResponse);
-    expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-      method: 'POST',
-      url: 'https://api.avax-test.network/ext/bc/C/rpc',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: {
-        jsonrpc: '2.0',
-        method: 'avax.export',
-        params: {
-          to: 'X-test-address',
-          amount: '500000000',
-          destinationChain: 'X',
-        },
-        id: 1,
-      },
-      json: true,
-    });
+    expect(result[0].json.result.name).toBe('Test Asset');
   });
 
-  test('should import AVAX to P-Chain successfully', async () => {
-    const mockResponse = {
-      jsonrpc: '2.0',
-      result: {
-        txID: 'test-import-transaction-id',
-      },
-      id: 1,
-    };
+  it('should create asset successfully', async () => {
+    mockExecuteFunctions.getNodeParameter
+      .mockReturnValueOnce('createAsset')
+      .mockReturnValueOnce('Test Asset')
+      .mockReturnValueOnce('TEST')
+      .mockReturnValueOnce(8)
+      .mockReturnValueOnce('[]');
+    
+    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        result: {
+          assetID: '2fombhL7aGPwj3KH4bfrmJwW6PVnMobf9Y2fn9GwxiAAJyFDbe'
+        },
+        id: 1
+      })
+    );
 
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'importToPChain';
-        case 'to': return 'P-test-import-address';
-        case 'sourceChain': return 'X';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-    const items = [{ json: {} }];
-    const result = await executeCrossChainTransfersOperations.call(mockExecuteFunctions, items);
-
+    const result = await executeAssetOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
     expect(result).toHaveLength(1);
-    expect(result[0].json).toEqual(mockResponse);
-    expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-      method: 'POST',
-      url: 'https://api.avax-test.network/ext/P',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: {
-        jsonrpc: '2.0',
-        method: 'platform.importAVAX',
-        params: {
-          to: 'P-test-import-address',
-          sourceChain: 'X',
-        },
-        id: 1,
-      },
-      json: true,
-    });
+    expect(result[0].json.result.assetID).toBe('2fombhL7aGPwj3KH4bfrmJwW6PVnMobf9Y2fn9GwxiAAJyFDbe');
   });
 
-  test('should handle API error response', async () => {
-    const mockErrorResponse = {
-      jsonrpc: '2.0',
-      error: {
-        code: -32602,
-        message: 'Invalid parameters',
-      },
-      id: 1,
-    };
-
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      switch (paramName) {
-        case 'operation': return 'exportFromXChain';
-        case 'to': return 'invalid-address';
-        case 'amount': return 'invalid-amount';
-        case 'destinationChain': return 'P';
-        default: return undefined;
-      }
-    });
-
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockErrorResponse);
-
-    const items = [{ json: {} }];
-
-    await expect(
-      executeCrossChainTransfersOperations.call(mockExecuteFunctions, items)
-    ).rejects.toThrow();
-  });
-
-  test('should handle unknown operation error', async () => {
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      if (paramName === 'operation') return 'unknownOperation';
-      return undefined;
-    });
-
-    const items = [{ json: {} }];
-
-    await expect(
-      executeCrossChainTransfersOperations.call(mockExecuteFunctions, items)
-    ).rejects.toThrow('Unknown operation: unknownOperation');
-  });
-
-  test('should continue on fail when enabled', async () => {
+  it('should handle errors gracefully when continueOnFail is true', async () => {
+    mockExecuteFunctions.getNodeParameter.mockReturnValueOnce('getAssetDescription');
     mockExecuteFunctions.continueOnFail.mockReturnValue(true);
-    mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-      if (paramName === 'operation') return 'unknownOperation';
-      return undefined;
-    });
+    mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('API Error'));
 
-    const items = [{ json: {} }];
-    const result = await executeCrossChainTransfersOperations.call(mockExecuteFunctions, items);
-
+    const result = await executeAssetOperations.call(mockExecuteFunctions, [{ json: {} }]);
+    
     expect(result).toHaveLength(1);
-    expect(result[0].json).toHaveProperty('error');
-    expect(result[0].json.error).toContain('Unknown operation');
+    expect(result[0].json.error).toBe('API Error');
+  });
+
+  it('should throw error when continueOnFail is false', async () => {
+    mockExecuteFunctions.getNodeParameter.mockReturnValueOnce('getAssetDescription');
+    mockExecuteFunctions.continueOnFail.mockReturnValue(false);
+    mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('API Error'));
+
+    await expect(executeAssetOperations.call(mockExecuteFunctions, [{ json: {} }])).rejects.toThrow('API Error');
   });
 });
 
-describe('NodeInfo Resource', () => {
-  let mockExecuteFunctions: any;
+describe('Wallet Resource', () => {
+	let mockExecuteFunctions: any;
 
-  beforeEach(() => {
-    mockExecuteFunctions = {
-      getNodeParameter: jest.fn(),
-      getCredentials: jest.fn().mockResolvedValue({
-        apiKey: 'test-api-key',
-        baseUrl: 'https://api.avax.network',
-      }),
-      getInputData: jest.fn().mockReturnValue([{ json: {} }]),
-      getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
-      continueOnFail: jest.fn().mockReturnValue(false),
-      helpers: {
-        httpRequest: jest.fn(),
-        requestWithAuthentication: jest.fn(),
-      },
-    };
-  });
+	beforeEach(() => {
+		mockExecuteFunctions = {
+			getNodeParameter: jest.fn(),
+			getCredentials: jest.fn().mockResolvedValue({
+				baseUrl: 'https://api.avax.network',
+			}),
+			getInputData: jest.fn().mockReturnValue([{ json: {} }]),
+			getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
+			continueOnFail: jest.fn().mockReturnValue(false),
+			helpers: {
+				httpRequest: jest.fn(),
+			},
+		};
+	});
 
-  it('should get node version successfully', async () => {
-    const mockResponse = {
-      result: {
-        version: 'avalanche/1.10.0',
-        databaseVersion: '1.4.5',
-        gitCommit: 'abc123',
-      },
-    };
+	describe('createUser operation', () => {
+		it('should create a wallet user successfully', async () => {
+			mockExecuteFunctions.getNodeParameter
+				.mockReturnValueOnce('createUser')
+				.mockReturnValueOnce('testuser')
+				.mockReturnValueOnce('testpass');
 
-    mockExecuteFunctions.getNodeParameter
-      .mockReturnValueOnce('getNodeVersion')
-      .mockReturnValueOnce('getNodeVersion');
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
+			const mockResponse = {
+				jsonrpc: '2.0',
+				id: 1,
+				result: { success: true },
+			};
 
-    const items = [{ json: {} }];
-    const result = await executeNodeInfoOperations.call(mockExecuteFunctions, items);
+			mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
 
-    expect(result).toEqual([
-      {
-        json: mockResponse.result,
-        pairedItem: { item: 0 },
-      },
-    ]);
-    expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-      method: 'POST',
-      url: 'https://api.avax.network/ext/info',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      json: true,
-      body: {
-        jsonrpc: '2.0',
-        method: 'info.getNodeVersion',
-        params: {},
-        id: 1,
-      },
-    });
-  });
+			const result = await executeWalletOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
-  it('should get blockchain ID successfully', async () => {
-    const mockResponse = {
-      result: {
-        blockchainID: '2oYMqpcFgW77WryAmhGZhXS5qLKUTbB9Tc6qxKiDqGVRvBkvKn',
-      },
-    };
+			expect(result).toEqual([{
+				json: mockResponse,
+				pairedItem: { item: 0 },
+			}]);
+		});
 
-    mockExecuteFunctions.getNodeParameter
-      .mockReturnValueOnce('getBlockchainID')
-      .mockReturnValueOnce('X');
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
+		it('should handle errors when creating a wallet user', async () => {
+			mockExecuteFunctions.getNodeParameter
+				.mockReturnValueOnce('createUser')
+				.mockReturnValueOnce('testuser')
+				.mockReturnValueOnce('testpass');
 
-    const items = [{ json: {} }];
-    const result = await executeNodeInfoOperations.call(mockExecuteFunctions, items);
+			mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('API Error'));
+			mockExecuteFunctions.continueOnFail.mockReturnValue(true);
 
-    expect(result).toEqual([
-      {
-        json: mockResponse.result,
-        pairedItem: { item: 0 },
-      },
-    ]);
-    expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-      method: 'POST',
-      url: 'https://api.avax.network/ext/info',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      json: true,
-      body: {
-        jsonrpc: '2.0',
-        method: 'info.getBlockchainID',
-        params: {
-          alias: 'X',
-        },
-        id: 1,
-      },
-    });
-  });
+			const result = await executeWalletOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
-  it('should check bootstrap status successfully', async () => {
-    const mockResponse = {
-      result: {
-        isBootstrapped: true,
-      },
-    };
+			expect(result).toEqual([{
+				json: { error: 'API Error' },
+				pairedItem: { item: 0 },
+			}]);
+		});
+	});
 
-    mockExecuteFunctions.getNodeParameter
-      .mockReturnValueOnce('isBootstrapped')
-      .mockReturnValueOnce('X');
-    mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
+	describe('listUsers operation', () => {
+		it('should list wallet users successfully', async () => {
+			mockExecuteFunctions.getNodeParameter.mockReturnValueOnce('listUsers');
 
-    const items = [{ json: {} }];
-    const result = await executeNodeInfoOperations.call(mockExecuteFunctions, items);
+			const mockResponse = {
+				jsonrpc: '2.0',
+				id: 1,
+				result: { users: ['user1', 'user2'] },
+			};
 
-    expect(result).toEqual([
-      {
-        json: mockResponse.result,
-        pairedItem: { item: 0 },
-      },
-    ]);
-  });
+			mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
 
-  it('should handle API errors properly', async () => {
-    const mockError = new Error('API Error');
-    mockError.response = {
-      body: {
-        error: {
-          code: -32601,
-          message: 'Method not found',
-        },
-      },
-    };
+			const result = await executeWalletOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
-    mockExecuteFunctions.getNodeParameter.mockReturnValue('getNodeVersion');
-    mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(mockError);
+			expect(result).toEqual([{
+				json: mockResponse,
+				pairedItem: { item: 0 },
+			}]);
+		});
+	});
 
-    const items = [{ json: {} }];
+	describe('createXAddress operation', () => {
+		it('should create X-Chain address successfully', async () => {
+			mockExecuteFunctions.getNodeParameter
+				.mockReturnValueOnce('createXAddress')
+				.mockReturnValueOnce('testuser')
+				.mockReturnValueOnce('testpass');
 
-    await expect(
-      executeNodeInfoOperations.call(mockExecuteFunctions, items)
-    ).rejects.toThrow();
-  });
+			const mockResponse = {
+				jsonrpc: '2.0',
+				id: 1,
+				result: { address: 'X-avax1...' },
+			};
 
-  it('should continue on fail when configured', async () => {
-    const mockError = new Error('Network error');
-    mockExecuteFunctions.getNodeParameter.mockReturnValue('getNodeVersion');
-    mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(mockError);
-    mockExecuteFunctions.continueOnFail.mockReturnValue(true);
+			mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
 
-    const items = [{ json: {} }];
-    const result = await executeNodeInfoOperations.call(mockExecuteFunctions, items);
+			const result = await executeWalletOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
-    expect(result).toEqual([
-      {
-        json: { error: 'Network error' },
-        pairedItem: { item: 0 },
-      },
-    ]);
-  });
-});
+			expect(result).toEqual([{
+				json: mockResponse,
+				pairedItem: { item: 0 },
+			}]);
+		});
+	});
 
-describe('HealthMonitoring Resource', () => {
-  let mockExecuteFunctions: any;
+	describe('createPAddress operation', () => {
+		it('should create P-Chain address successfully', async () => {
+			mockExecuteFunctions.getNodeParameter
+				.mockReturnValueOnce('createPAddress')
+				.mockReturnValueOnce('testuser')
+				.mockReturnValueOnce('testpass');
 
-  beforeEach(() => {
-    mockExecuteFunctions = {
-      getNodeParameter: jest.fn(),
-      getCredentials: jest.fn().mockResolvedValue({
-        apiKey: 'test-api-key',
-        baseUrl: 'https://api.avax.network',
-      }),
-      getInputData: jest.fn().mockReturnValue([{ json: {} }]),
-      getNode: jest.fn().mockReturnValue({ name: 'Test Node' }),
-      continueOnFail: jest.fn().mockReturnValue(false),
-      helpers: {
-        httpRequest: jest.fn(),
-        requestWithAuthentication: jest.fn(),
-      },
-    };
-  });
+			const mockResponse = {
+				jsonrpc: '2.0',
+				id: 1,
+				result: { address: 'P-avax1...' },
+			};
 
-  describe('getLiveness', () => {
-    it('should get node liveness status successfully', async () => {
-      const mockResponse = {
-        checks: {
-          network: {
-            message: {
-              consensus: 'running'
-            },
-            timestamp: '2023-01-01T00:00:00Z',
-            duration: 1000000
-          }
-        },
-        healthy: true
-      };
+			mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
 
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        if (paramName === 'operation') return 'getLiveness';
-        return undefined;
-      });
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
+			const result = await executeWalletOperations.call(mockExecuteFunctions, [{ json: {} }]);
 
-      const result = await executeHealthMonitoringOperations.call(
-        mockExecuteFunctions,
-        [{ json: {} }]
-      );
-
-      expect(result).toEqual([{ json: mockResponse, pairedItem: { item: 0 } }]);
-      expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-        method: 'GET',
-        url: 'https://api.avax.network/ext/health',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        json: true,
-      });
-    });
-
-    it('should handle getLiveness errors', async () => {
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        if (paramName === 'operation') return 'getLiveness';
-        return undefined;
-      });
-      mockExecuteFunctions.helpers.httpRequest.mockRejectedValue(new Error('Network error'));
-      mockExecuteFunctions.continueOnFail.mockReturnValue(true);
-
-      const result = await executeHealthMonitoringOperations.call(
-        mockExecuteFunctions,
-        [{ json: {} }]
-      );
-
-      expect(result).toEqual([{ json: { error: 'Network error' }, pairedItem: { item: 0 } }]);
-    });
-  });
-
-  describe('getReadiness', () => {
-    it('should get node readiness status successfully', async () => {
-      const mockResponse = {
-        jsonrpc: '2.0',
-        result: {
-          healthy: true,
-          checks: {}
-        },
-        id: 1
-      };
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        if (paramName === 'operation') return 'getReadiness';
-        return undefined;
-      });
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const result = await executeHealthMonitoringOperations.call(
-        mockExecuteFunctions,
-        [{ json: {} }]
-      );
-
-      expect(result).toEqual([{ json: mockResponse, pairedItem: { item: 0 } }]);
-      expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-        method: 'POST',
-        url: 'https://api.avax.network/ext/health',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: {
-          jsonrpc: '2.0',
-          method: 'health.getReadiness',
-          params: {},
-          id: 1,
-        },
-        json: true,
-      });
-    });
-  });
-
-  describe('getHealth', () => {
-    it('should get overall health status with tags', async () => {
-      const mockResponse = {
-        jsonrpc: '2.0',
-        result: {
-          healthy: true,
-          checks: {
-            network: { healthy: true }
-          }
-        },
-        id: 1
-      };
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        if (paramName === 'operation') return 'getHealth';
-        if (paramName === 'tags') return 'network,bootstrap';
-        return undefined;
-      });
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const result = await executeHealthMonitoringOperations.call(
-        mockExecuteFunctions,
-        [{ json: {} }]
-      );
-
-      expect(result).toEqual([{ json: mockResponse, pairedItem: { item: 0 } }]);
-      expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-        method: 'POST',
-        url: 'https://api.avax.network/ext/health',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: {
-          jsonrpc: '2.0',
-          method: 'health.health',
-          params: {
-            tags: ['network', 'bootstrap']
-          },
-          id: 1,
-        },
-        json: true,
-      });
-    });
-  });
-
-  describe('issueAvmTx', () => {
-    it('should issue AVM transaction successfully', async () => {
-      const mockResponse = {
-        jsonrpc: '2.0',
-        result: {
-          txID: '2QouvFWUbjuySRxeX5xMbNCuAaKWfbk5FeEa2JmoF85RKLk2dD'
-        },
-        id: 1
-      };
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        if (paramName === 'operation') return 'issueAvmTx';
-        if (paramName === 'tx') return '0x1234567890abcdef';
-        if (paramName === 'encoding') return 'hex';
-        return undefined;
-      });
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const result = await executeHealthMonitoringOperations.call(
-        mockExecuteFunctions,
-        [{ json: {} }]
-      );
-
-      expect(result).toEqual([{ json: mockResponse, pairedItem: { item: 0 } }]);
-      expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-        method: 'POST',
-        url: 'https://api.avax.network/ext/bc/X',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: {
-          jsonrpc: '2.0',
-          method: 'avm.issueTx',
-          params: {
-            tx: '0x1234567890abcdef',
-            encoding: 'hex',
-          },
-          id: 1,
-        },
-        json: true,
-      });
-    });
-  });
-
-  describe('getLatestBlockNumber', () => {
-    it('should get latest block number successfully', async () => {
-      const mockResponse = {
-        jsonrpc: '2.0',
-        result: '0x1b4',
-        id: 1
-      };
-
-      mockExecuteFunctions.getNodeParameter.mockImplementation((paramName: string) => {
-        if (paramName === 'operation') return 'getLatestBlockNumber';
-        return undefined;
-      });
-      mockExecuteFunctions.helpers.httpRequest.mockResolvedValue(mockResponse);
-
-      const result = await executeHealthMonitoringOperations.call(
-        mockExecuteFunctions,
-        [{ json: {} }]
-      );
-
-      expect(result).toEqual([{ json: mockResponse, pairedItem: { item: 0 } }]);
-      expect(mockExecuteFunctions.helpers.httpRequest).toHaveBeenCalledWith({
-        method: 'POST',
-        url: 'https://api.avax.network/ext/bc/C/rpc',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: {
-          jsonrpc: '2.0',
-          method: 'eth_blockNumber',
-          params: [],
-          id: 1,
-        },
-        json: true,
-      });
-    });
-  });
+			expect(result).toEqual([{
+				json: mockResponse,
+				pairedItem: { item: 0 },
+			}]);
+		});
+	});
 });
 });
